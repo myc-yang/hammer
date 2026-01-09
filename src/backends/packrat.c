@@ -390,7 +390,7 @@ bool h_packrat_parse_chunk(HSuspendedParser *s, HInputStream *input) {
         h_platform_errx(1, "input length would overflow");
     newlen = cat->length + input->length;
     cat->input = h_realloc(mm__, (void *)cat->input, newlen);
-    memcpy((void *)cat->input + cat->length, input->input, input->length);
+    memcpy((char *)cat->input + cat->length, input->input, input->length);
     cat->length = newlen;
     cat->last_chunk = input->last_chunk;
 
