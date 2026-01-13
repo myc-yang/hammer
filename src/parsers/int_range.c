@@ -13,12 +13,12 @@ static HParseResult *parse_int_range(void *env, HParseState *state) {
         return NULL;
     switch (ret->ast->token_type) {
     case TT_SINT:
-        if (r_env->lower <= ret->ast->sint && r_env->upper >= ret->ast->sint)
+        if (r_env->lower <= ret->ast->swig_union.sint && r_env->upper >= ret->ast->swig_union.sint)   /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
             return ret;
         else
             return NULL;
     case TT_UINT:
-        if ((uint64_t)r_env->lower <= ret->ast->uint && (uint64_t)r_env->upper >= ret->ast->uint)
+        if ((uint64_t)r_env->lower <= ret->ast->swig_union.uint && (uint64_t)r_env->upper >= ret->ast->swig_union.uint)   /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
             return ret;
         else
             return NULL;

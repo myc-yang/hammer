@@ -15,8 +15,8 @@ static HParseResult *parse_bytes(void *env_, HParseState *state) {
 
     HParsedToken *result = a_new(HParsedToken, 1);
     result->token_type = TT_BYTES;
-    result->bytes.token = bs;
-    result->bytes.len = env->length;
+    result->swig_union.bytes.token = bs;     /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
+    result->swig_union.bytes.len = env->length;        /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     result->index = 0;
     result->bit_length = 0;
     result->bit_offset = 0;

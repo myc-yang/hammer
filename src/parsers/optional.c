@@ -32,8 +32,8 @@ static HParsedToken *reshape_optional(const HParseResult *p, void *user_data) {
     assert(p->ast);
     assert(p->ast->token_type == TT_SEQUENCE);
 
-    if (p->ast->seq->used > 0) {
-        HParsedToken *res = p->ast->seq->elements[0];
+    if (p->ast->swig_union.seq->used > 0) {        /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
+        HParsedToken *res = p->ast->swig_union.seq->elements[0];       /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
         if (res)
             return res;
     }

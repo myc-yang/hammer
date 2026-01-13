@@ -18,5 +18,5 @@ static const HParserVtable unimplemented_vt = {
 
 static HParser unimplemented = {.vtable = &unimplemented_vt, .env = NULL};
 
-const HParser *h_unimplemented() { return &unimplemented; }
+const HParser *h_unimplemented(void) { return &unimplemented; }     /* TODO for cFS - "error: function declaration isn’t a prototype [-Werror=strict-prototypes]" */
 const HParser *h_unimplemented__m(HAllocator *mm__) { return &unimplemented; }

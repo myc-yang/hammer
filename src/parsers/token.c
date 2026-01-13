@@ -17,8 +17,8 @@ static HParseResult *parse_token(void *env, HParseState *state) {
     }
     HParsedToken *tok = a_new(HParsedToken, 1);
     tok->token_type = TT_BYTES;
-    tok->bytes.token = t->str;
-    tok->bytes.len = t->len;
+    tok->swig_union.bytes.token = t->str;  /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
+    tok->swig_union.bytes.len = t->len;    /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     tok->index = 0;
     tok->bit_offset = 0;
     tok->bit_length = 0;
@@ -29,7 +29,7 @@ static HParsedToken *reshape_token(const HParseResult *p, void *user_data) {
     // fetch sequence of uints from p
     assert(p->ast);
     assert(p->ast->token_type == TT_SEQUENCE);
-    HCountedArray *seq = p->ast->seq;
+    HCountedArray *seq = p->ast->swig_union.seq;   /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
 
     // extract byte string
     uint8_t *arr = h_arena_malloc(p->arena, seq->used);
@@ -37,14 +37,14 @@ static HParsedToken *reshape_token(const HParseResult *p, void *user_data) {
     for (i = 0; i < seq->used; i++) {
         HParsedToken *t = seq->elements[i];
         assert(t->token_type == TT_UINT);
-        arr[i] = t->uint;
+        arr[i] = t->swig_union.uint;   /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     }
 
     // create result token
     HParsedToken *tok = h_arena_malloc(p->arena, sizeof(HParsedToken));
     tok->token_type = TT_BYTES;
-    tok->bytes.len = seq->used;
-    tok->bytes.token = arr;
+    tok->swig_union.bytes.len = seq->used; /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
+    tok->swig_union.bytes.token = arr;     /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
 
     return tok;
 }

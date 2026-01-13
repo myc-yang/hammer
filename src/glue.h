@@ -230,11 +230,11 @@ HParsedToken *h_make_float(HArena *arena, float val);
 #define H_ASSERT_FLOAT(TOK) h_assert_type(TT_FLOAT, TOK)
 
 /** Assert expected type and return contained value. */
-#define H_CAST(TYP, TOK) ((TYP *)H_ASSERT(TYP, TOK)->user)
+#define H_CAST(TYP, TOK) ((TYP *)H_ASSERT(TYP, TOK)->swig_union.user)  /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
 #define H_CAST_SEQ(TOK) (H_ASSERT_SEQ(TOK)->seq)
 #define H_CAST_BYTES(TOK) (H_ASSERT_BYTES(TOK)->bytes)
 #define H_CAST_SINT(TOK) (H_ASSERT_SINT(TOK)->sint)
-#define H_CAST_UINT(TOK) (H_ASSERT_UINT(TOK)->uint)
+#define H_CAST_UINT(TOK) (H_ASSERT_UINT(TOK)->swig_union.uint)     /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
 #define H_CAST_DOUBLE(TOK) (H_ASSERT_DOUBLE(TOK)->dbl)
 #define H_CAST_FLOAT(TOK) (H_ASSERT_FLOAT(TOK)->flt)
 

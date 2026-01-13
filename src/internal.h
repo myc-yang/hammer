@@ -70,7 +70,7 @@ static inline void h_generic_free(HAllocator *allocator, void *ptr) {
 }
 
 extern HAllocator system_allocator;
-typedef struct HCFStack_ HCFStack;
+typedef struct HCFStack_ HCFStack;        /* TODO for cFS:  Warning - "note: previous declaration of ‘HCFStack’ with type ‘HCFStack’ {aka ‘struct HCFStack_’}" */
 
 #define DEFAULT_ENDIANNESS (BIT_BIG_ENDIAN | BYTE_BIG_ENDIAN)
 
@@ -268,7 +268,7 @@ typedef struct HParserBackendVTable_ {
     /* extract params from the input string */
     int (*extract_params)(HParserBackendWithParams *be_with_params,
                           backend_with_params_t *be_with_params_t);
-} HParserBackendVTable;
+} HParserBackendVTable; /* TODO for cFS - Needs fix - "redefinition of typedef ‘HParserBackendVTable’ [-Werror=pedantic]" */
 
 /* The (location, parser) tuple used to key the cache.
  */
@@ -321,7 +321,7 @@ typedef struct HParserCacheValue_t {
     union {
         HLeftRec *left;
         HParseResult *right;
-    };
+    }cache_value_union;  /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     HInputStream input_stream;
 } HParserCacheValue;
 
@@ -454,7 +454,7 @@ void *h_symbol_get(HParseState *state, const char *key);
 void *h_symbol_free(HParseState *state, const char *key);
 
 typedef struct HCFSequence_ HCFSequence;
-typedef struct HCFStack_ HCFStack;
+typedef struct HCFStack_ HCFStack;  /* TODO for cFS - Needs fix - "redefinition of typedef ‘HCFStack’ [-Werror=pedantic]" */
 
 struct HCFChoice_ {
     enum HCFChoiceType { HCF_END, HCF_CHOICE, HCF_CHARSET, HCF_CHAR } type;
@@ -462,7 +462,7 @@ struct HCFChoice_ {
         HCharset charset;
         HCFSequence **seq;
         uint8_t chr;
-    };
+    }hcfchoice_union;  /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     HAction reshape; // take CFG parse tree to HParsedToken of expected form.
                      // to execute before action and pred are applied.
     HAction action;
@@ -514,20 +514,20 @@ static inline void h_cfstack_add_to_seq(HAllocator *mm__, HCFStack *stk__, HCFCh
 static inline void h_cfstack_add_to_seq(HAllocator *mm__, HCFStack *stk__, HCFChoice *item) {
     HCFChoice *cur_top = stk__->stack[stk__->count - 1];
     assert(cur_top->type == HCF_CHOICE);
-    assert(cur_top->seq[0] != NULL); // There must be at least one sequence...
+    assert(cur_top->hcfchoice_union.seq[0] != NULL); // There must be at least one sequence...  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
     stk__->last_completed = item;
     for (int i = 0;; i++) {
-        if (cur_top->seq[i + 1] == NULL) {
-            assert(cur_top->seq[i]->items != NULL);
+        if (cur_top->hcfchoice_union.seq[i + 1] == NULL) {  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
+            assert(cur_top->hcfchoice_union.seq[i]->items != NULL);  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
             for (int j = 0;; j++) {
-                if (cur_top->seq[i]->items[j] == NULL) {
-                    cur_top->seq[i]->items =
-                        mm__->realloc(mm__, cur_top->seq[i]->items, sizeof(HCFChoice *) * (j + 2));
-                    if (!cur_top->seq[i]->items) {
+                if (cur_top->hcfchoice_union.seq[i]->items[j] == NULL) {  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
+                    cur_top->hcfchoice_union.seq[i]->items =  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
+                        mm__->realloc(mm__, cur_top->hcfchoice_union.seq[i]->items, sizeof(HCFChoice *) * (j + 2));  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
+                    if (!cur_top->hcfchoice_union.seq[i]->items) {  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
                         stk__->error = 1;
                     }
-                    cur_top->seq[i]->items[j] = item;
-                    cur_top->seq[i]->items[j + 1] = NULL;
+                    cur_top->hcfchoice_union.seq[i]->items[j] = item;  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
+                    cur_top->hcfchoice_union.seq[i]->items[j + 1] = NULL;  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
                     assert(!stk__->error);
                     return;
                 }
@@ -555,14 +555,14 @@ static inline HCFChoice *h_cfstack_new_choice_raw(HAllocator *mm__, HCFStack *st
 static inline void h_cfstack_add_charset(HAllocator *mm__, HCFStack *stk__, HCharset charset) {
     HCFChoice *ni = h_cfstack_new_choice_raw(mm__, stk__);
     ni->type = HCF_CHARSET;
-    ni->charset = charset;
+    ni->hcfchoice_union.charset = charset;  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
     stk__->last_completed = ni;
 }
 
 static inline void h_cfstack_add_char(HAllocator *mm__, HCFStack *stk__, uint8_t chr) {
     HCFChoice *ni = h_cfstack_new_choice_raw(mm__, stk__);
     ni->type = HCF_CHAR;
-    ni->chr = chr;
+    ni->hcfchoice_union.chr = chr;  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
     stk__->last_completed = ni;
 }
 
@@ -575,8 +575,8 @@ static inline void h_cfstack_add_end(HAllocator *mm__, HCFStack *stk__) {
 static inline void h_cfstack_begin_choice(HAllocator *mm__, HCFStack *stk__) {
     HCFChoice *choice = h_cfstack_new_choice_raw(mm__, stk__);
     choice->type = HCF_CHOICE;
-    choice->seq = h_new(HCFSequence *, 1);
-    choice->seq[0] = NULL;
+    choice->hcfchoice_union.seq = h_new(HCFSequence *, 1);  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
+    choice->hcfchoice_union.seq[0] = NULL;  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
 
     if (stk__->count + 1 > stk__->cap) {
         assert(stk__->cap > 0);
@@ -593,14 +593,14 @@ static inline void h_cfstack_begin_choice(HAllocator *mm__, HCFStack *stk__) {
 static inline void h_cfstack_begin_seq(HAllocator *mm__, HCFStack *stk__) {
     HCFChoice *top = stk__->stack[stk__->count - 1];
     for (int i = 0;; i++) {
-        if (top->seq[i] == NULL) {
-            top->seq = mm__->realloc(mm__, top->seq, sizeof(HCFSequence *) * (i + 2));
-            if (!top->seq) {
+        if (top->hcfchoice_union.seq[i] == NULL) {  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
+            top->hcfchoice_union.seq = mm__->realloc(mm__, top->hcfchoice_union.seq, sizeof(HCFSequence *) * (i + 2));  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
+            if (!top->hcfchoice_union.seq) {  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
                 stk__->error = 1;
                 return;
             }
-            HCFSequence *seq = top->seq[i] = h_new(HCFSequence, 1);
-            top->seq[i + 1] = NULL;
+            HCFSequence *seq = top->hcfchoice_union.seq[i] = h_new(HCFSequence, 1);  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
+            top->hcfchoice_union.seq[i + 1] = NULL;  /* TODO for cFS - Added union name due to ISO C99 not supporting unnamed structs/unions */
             seq->items = h_new(HCFChoice *, 1);
             seq->items[0] = NULL;
             return;

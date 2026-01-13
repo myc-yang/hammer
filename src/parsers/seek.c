@@ -50,7 +50,7 @@ static HParseResult *parse_seek(void *env, HParseState *state) {
 
     HParsedToken *tok = a_new(HParsedToken, 1);
     tok->token_type = TT_UINT;
-    tok->uint = pos;
+    tok->swig_union.uint = pos;        /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     tok->index = 0;
     tok->bit_length = 0;
     tok->bit_offset = 0;
@@ -60,7 +60,7 @@ static HParseResult *parse_seek(void *env, HParseState *state) {
 static HParseResult *parse_tell(void *env, HParseState *state) {
     HParsedToken *tok = a_new(HParsedToken, 1);
     tok->token_type = TT_UINT;
-    tok->uint = h_input_stream_pos(&state->input_stream);
+    tok->swig_union.uint = h_input_stream_pos(&state->input_stream);       /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     tok->index = 0;
     tok->bit_length = 0;
     tok->bit_offset = 0;

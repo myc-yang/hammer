@@ -11,7 +11,7 @@ static HParseResult *parse_charset(void *env, HParseState *state) {
     if (charset_isset(cs, in)) {
         HParsedToken *tok = a_new(HParsedToken, 1);
         tok->token_type = TT_UINT;
-        tok->uint = in;
+        tok->swig_union.uint = in;     /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
         tok->index = 0;
         tok->bit_length = 0;
         tok->bit_offset = 0;

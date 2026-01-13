@@ -12,9 +12,9 @@ static HParseResult *parse_bits(void *env, HParseState *state) {
     HParsedToken *result = a_new(HParsedToken, 1);
     result->token_type = (env_->signedp ? TT_SINT : TT_UINT);
     if (env_->signedp)
-        result->sint = h_read_bits(&state->input_stream, env_->length, true);
+        result->swig_union.sint = h_read_bits(&state->input_stream, env_->length, true);   /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     else
-        result->uint = h_read_bits(&state->input_stream, env_->length, false);
+        result->swig_union.uint = h_read_bits(&state->input_stream, env_->length, false);  /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     result->index = 0;
     result->bit_length = 0;
     result->bit_offset = 0;
@@ -29,24 +29,24 @@ static HParsedToken *reshape_bits(const HParseResult *p, void *signedp_p) {
     assert(p->ast);
     assert(p->ast->token_type == TT_SEQUENCE);
 
-    HCountedArray *seq = p->ast->seq;
+    HCountedArray *seq = p->ast->swig_union.seq;   /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     HParsedToken *ret = h_arena_malloc(p->arena, sizeof(HParsedToken));
     ret->token_type = TT_UINT;
 
-    if (signedp && seq->used > 0 && (seq->elements[0]->uint & 128))
-        ret->uint = -1; // all ones
+    if (signedp && seq->used > 0 && (seq->elements[0]->swig_union.uint & 128))     /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
+        ret->swig_union.uint = -1; // all ones     /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
 
     for (size_t i = 0; i < seq->used; i++) {
         HParsedToken *t = seq->elements[i];
         assert(t->token_type == TT_UINT);
 
-        ret->uint <<= 8;
-        ret->uint |= t->uint & 0xFF;
+        ret->swig_union.uint <<= 8;         /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
+        ret->swig_union.uint |= t->swig_union.uint & 0xFF;        /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     }
 
     if (signedp) {
         ret->token_type = TT_SINT;
-        ret->sint = ret->uint;
+        ret->swig_union.sint = ret->swig_union.uint;          /* TODO for cFS - Added union name - ISO C99 doesn’t support unnamed structs/unions */
     }
 
     return ret;
