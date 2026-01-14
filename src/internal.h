@@ -268,7 +268,7 @@ typedef struct HParserBackendVTable_ {
     /* extract params from the input string */
     int (*extract_params)(HParserBackendWithParams *be_with_params,
                           backend_with_params_t *be_with_params_t);
-} HParserBackendVTable; /* TODO for cFS - Needs fix - "redefinition of typedef ‘HParserBackendVTable’ [-Werror=pedantic]" */
+} HParserBackendVTable_; /* TODO for cFS - "redefinition of typedef ‘HParserBackendVTable’ [-Werror=pedantic]" fixed by renaming HParserBackendVTable to HParserBackendVTable_ */
 
 /* The (location, parser) tuple used to key the cache.
  */
@@ -454,7 +454,7 @@ void *h_symbol_get(HParseState *state, const char *key);
 void *h_symbol_free(HParseState *state, const char *key);
 
 typedef struct HCFSequence_ HCFSequence;
-typedef struct HCFStack_ HCFStack;  /* TODO for cFS - Needs fix - "redefinition of typedef ‘HCFStack’ [-Werror=pedantic]" */
+//typedef struct HCFStack_ HCFStack;  /* TODO for cFS - "redefinition of typedef ‘HCFStack’ [-Werror=pedantic]" fixed by commenting-out line */
 
 struct HCFChoice_ {
     enum HCFChoiceType { HCF_END, HCF_CHOICE, HCF_CHARSET, HCF_CHAR } type;
