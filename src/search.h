@@ -1,3 +1,10 @@
+/* This tells the compiler to treat the entire file as a system header, which suppresses warnings for GCC extensions.
+   This is needed to avoid error: #include_next is a GCC extension [-Werror]  */
+
+#ifdef __GNUC__
+#pragma GCC system_header
+#endif
+
 #if defined(_MSC_VER)
 /* find or insert datum into search tree */
 void *tsearch(const void *vkey, void **vrootp, int (*compar)(const void *, const void *));
