@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Riverside Research */
 #ifdef __OpenBSD__
 #define _BSD_SOURCE // to obtain asprintf/vasprintf
 #else

@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Riverside Research */
 #include "params.h"
 
 size_t h_get_param_k(void *param) {

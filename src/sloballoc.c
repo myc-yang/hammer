@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Riverside Research */
 // first-fit SLOB (simple list of blocks) allocator
 
 #include "sloballoc.h"

@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Riverside Research */
 #ifndef HAMMER_BACKENDS_PARAMS__H
 #define HAMMER_BACKENDS_PARAMS__H
 

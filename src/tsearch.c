@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Riverside Research */
 /*	$OpenBSD: tsearch.c,v 1.9 2015/08/20 21:49:29 deraadt Exp $	*/
 
 /*

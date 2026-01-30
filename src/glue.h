@@ -1,3 +1,4 @@
+/* Copyright (c) 2026 Riverside Research */
 /**
  * API additions for writing grammar and semantic actions more concisely
  *
