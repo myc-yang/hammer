@@ -8,6 +8,4 @@
 #define H_GCC_ATTRIBUTE(x)
 #endif
 
-#define H_MSVC_DECLSPEC(x)
-
 #endif

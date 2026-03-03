@@ -1,22 +1,20 @@
-```
- .----------------.  .----------------.  .----------------.  .----------------.  .----------------.  .----------------. 
-| .--------------. || .--------------. || .--------------. || .--------------. || .--------------. || .--------------. |
-| |  ____  ____  | || |      __      | || | ____    ____ | || | ____    ____ | || |  _________   | || |  _______     | |
-| | |_   ||   _| | || |     /  \     | || ||_   \  /   _|| || ||_   \  /   _|| || | |_   ___  |  | || | |_   __ \    | |
-| |   | |__| |   | || |    / /\ \    | || |  |   \/   |  | || |  |   \/   |  | || |   | |_  \_|  | || |   | |__) |   | |
-| |   |  __  |   | || |   / ____ \   | || |  | |\  /| |  | || |  | |\  /| |  | || |   |  _|  _   | || |   |  __ /    | |
-| |  _| |  | |_  | || | _/ /    \ \_ | || | _| |_\/_| |_ | || | _| |_\/_| |_ | || |  _| |___/ |  | || |  _| |  \ \_  | |
-| | |____||____| | || ||____|  |____|| || ||_____||_____|| || ||_____||_____|| || | |_________|  | || | |____| |___| | |
-| |              | || |              | || |              | || |              | || |              | || |              | |
-| '--------------' || '--------------' || '--------------' || '--------------' || '--------------' || '--------------' |
- '----------------'  '----------------'  '----------------'  '----------------'  '----------------'  '----------------' 
-```
+![Hammer Logo](docs/assets/Hammer-Logo-Full-Color-Horizontal.png)
 
 Hammer is a parsing library. Like many modern parsing libraries, it provides a parser combinator interface for writing grammars as inline domain-specific languages, but Hammer also provides a variety of parsing backends. It's also bit-oriented rather than character-oriented, making it ideal for parsing binary data such as images, network packets, audio, and executables.
 
 Hammer is written in C and provides a packrat parsing backend.
 
-Hammer currently builds under Linux and other Unix-like systems.
+## MicroHammer
+MicroHammer is a slimmed-down version of Hammer with the goal of providing a lightweight, Linux-focused version of Hammer with a minimal, clean codebase. [Link to public release.](https://github.com/riversideresearch/hammer/releases/)
+
+The main feature of MicroHammer is its significantly smaller codebase, allowing for easier maintenance and onboarding. Key differences from the full Hammer library include:
+
+- Linux-focused development and deployment
+- More thorough and consistent documentation
+- Windows / macOS not supported
+- Packrat parsing backend only
+- No bindings for other languages
+
 
 ## Features
 
@@ -31,11 +29,18 @@ Hammer currently builds under Linux and other Unix-like systems.
 
 - [SCons](http://scons.org/)
 
-### Optional Dependencies
+```bash
+sudo apt install scons
+```
 
-- pkg-config (for `scons test`)
-- glib-2.0 (>= 2.29) (for `scons test`)
-- glib-2.0-dev (for `scons test`)
+### Optional Dependencies for Testing
+
+- pkg-config
+- glib-2.0-dev
+
+```bash
+sudo apt install pkg-config libglib2.0-dev
+```
 
 To build, type `scons`.
 To run the built-in test suite, type `scons test`.
@@ -44,13 +49,22 @@ For a debug build, add `--variant=debug`.
 
 To make Hammer available system-wide, use `scons install`. This places include files in `/usr/local/include/hammer` and library files in `/usr/local/lib` by default; to install elsewhere, add a `prefix=<destination>` argument, e.g. `scons install prefix=$HOME`.
 
+To remove installed files, use `scons uninstall` (with the same `prefix` if non-default).
+
+To check which variant and version of Hammer is currently installed:
+
+```bash
+PKG_CONFIG_PATH=/usr/local/lib/pkgconfig pkg-config --variable=variant libhammer
+PKG_CONFIG_PATH=/usr/local/lib/pkgconfig pkg-config --modversion libhammer
+```
+
 ## Usage
 
 Just `#include <hammer/hammer.h>` (also `#include <hammer/glue.h>` if you plan to use any of the convenience macros) and link with `-lhammer`.
 
 If you've installed Hammer system-wide, you can use `pkg-config` in the usual way.
 
-To learn about hammer check:
+To learn about hammer, check:
 
 - the [user guide](https://github.com/UpstandingHackers/hammer/wiki/User-guide)
 - [Hammer Primer](https://github.com/sergeybratus/HammerPrimer) (outdated in terms of code, but good to get the general thinking)
@@ -66,10 +80,6 @@ The `examples/` directory contains some simple examples, currently including:
 ## Contributing
 
 For information on contributing to Hammer, including development setup, code formatting guidelines, and documentation generation, please see [DEVELOPMENT.md](DEVELOPMENT.md).
-
-## Known Issues
-
-The regular expression backend is potentially not thread-safe (thanks to Martin Murray for pointing this out). A full rewrite of this backend is on the roadmap already due to some unexpected nondeterminism in the current implementation; we plan to fix this problem in that rewrite.
 
 ## Contact
 

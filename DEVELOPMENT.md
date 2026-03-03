@@ -1,55 +1,101 @@
 # Development Guide
 
-This document combines contributor guidelines, development notes, and TODO items for the Hammer parser library.
+This document provides guidelines and instructions for developers working on the Hammer parsing library.
+
+Tested on Ubuntu 22.04 and 24.04 (VM and WSL).
 
 ## Contributor Setup
 
-To contribute to Hammer, please make sure you have the following tools installed:
+### Formatting and pre-commit
 
-- **clang-format** (v18+) → automatic code formatting based on the `.clang-format` file  
-- **Doxygen** → generate API documentation from comments  
-- **pre-commit** (optional but recommended) → auto-run `clang-format` before commits  
+Install formatting tools:
 
-### Formatting Code
+```bash
+sudo apt install -y clang-format pre-commit
+```
 
-Run clang-format before committing to keep code style consistent:
+Use `clang-format` to keep C code consistent.
+Examples:
 
-**All code files:**
+- Format all C sources and headers:
 ```bash
 clang-format -i **/*.c **/*.h
 ```
-
-**Apply clang-format to a single file:**
+- Format a single file:
 ```bash
 clang-format -i path/to/file.c
 ```
 
-### Generating Documentation
+Install the pre-commit hooks defined in `.pre-commit-config.yaml` to run formatting automatically:
+```bash
+pre-commit install
+```
 
-Build developer docs locally with:
+### Version management
 
+The repository centralizes the semantic version in the `VERSION` file. Update that file to bump the project version. All downstream artifacts read from it:
+
+- `VERSION`: semantic version (for example: `1.0.0`)
+- GitHub tags: `v{VERSION}` (for example: `v1.0.0`)
+- Debian packages: `{VERSION}-1`
+- Shared library: `libhammer.so.{VERSION}`
+- `pkg-config` entries read the same version
+
+### Test coverage
+
+Install coverage tools:
+```bash
+sudo apt install lcov xdg-utils
+```
+
+Generate coverage and open the HTML report:
+```bash
+scons -c --variant=debug && scons --coverage --variant=debug test && mkdir -p coverage && lcov --directory build/debug/src --zerocounters && lcov --ignore-errors gcov --capture --initial --directory build/debug/src --output-file coverage/base.info && scons --coverage --variant=debug test && lcov --ignore-errors gcov --capture --directory build/debug/src --output-file coverage/test.info && lcov --add-tracefile coverage/base.info --add-tracefile coverage/test.info --output-file coverage/coverage.info && genhtml coverage/coverage.info --output-directory coverage/html && xdg-open coverage/html/index.html
+```
+
+Notes:
+- On WSL, replace `xdg-open` with `wslview` (from the `wslu` package).
+- Coverage and object files (`.gcov`, `.gcno`, `.gcda`, `.o`) are generated under `build/debug/` or `build/opt/`.
+- To generate `.gcov` files manually: `scons --coverage --variant=debug gcov`.
+
+### Linting Python and SCons files
+
+Install `ruff`:
+```bash
+sudo apt install pipx
+pipx install ruff
+```
+
+Lint all Python and SCons files with:
+```bash
+ruff check $(find . -name "*.py" -o -name "SConstruct" -o -name "SConscript")
+```
+
+Notes:
+- `ruff` configuration lives in `ruff.toml`.
+
+### Generating documentation (Doxygen)
+
+Install Doxygen:
+```bash
+sudo apt install doxygen
+```
+
+Build the documentation:
 ```bash
 doxygen Doxyfile
 ```
 
-This will create HTML output in `docs/html/index.html`.
+Output will be in `docs/html/`. Open the main page:
+```bash
+xdg-open docs/html/index.html
+```
 
-## Version Management
-
-The project uses centralized version management via the `VERSION` file to ensure consistency across GitHub releases, Debian packages, and pkg-config files.
-
-### How It Works
-
-- **VERSION file**: Contains semantic version (e.g., `1.0.0`)
-- **All components** automatically read from this file:
-  - GitHub tags: `v1.0.0`
-  - Debian packages: `1.0.0-1`
-  - Shared library: `libhammer.so.1.0.0`
-  - pkg-config: Version field
+For WSL, use `wslview` instead of `xdg-open`.
 
 ## TODO Items (previously TODO)
 
-- Make h_action functions be called only after parse is complete.
+- Make `h_action` functions be called only after parse is complete.
 - Allow alternative input streams (eg, zlib, base64)
   - Bonus points if layered...
 - Add consistency check to the bitreader
