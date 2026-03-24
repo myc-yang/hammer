@@ -19,6 +19,7 @@
 %rename("_%s") "";
 // %rename(_h_ch) h_ch;
 
+%warnfilter(454) register_helpers;
 %inline {
   static PyObject *_helper_Placeholder = NULL, *_helper_ParseError = NULL;
 
@@ -56,7 +57,7 @@
       pass
 
   _hammer._register_helpers(ParseError,
-			    Placeholder)
+                            Placeholder)
   %}
 
 %typemap(in) void*[] {
@@ -94,7 +95,7 @@
   $result = PyBytes_FromStringAndSize((char*)$1->token, $1->len);
  }
 %typemap(out) struct HCountedArray_* {
-  int i;
+  size_t i;
   $result = PyList_New($1->used);
   for (i=0; i<$1->used; i++) {
     HParsedToken *t = $1->elements[i];
@@ -163,6 +164,16 @@
 %ignore h_permutation__v;
 %ignore h_permutation__mv;
 
+// Ignore varargs variants — Python uses the __a (array) variants instead.
+// Without this SWIG generates wrappers that call these sentinel-terminated functions
+// without the required NULL terminator, causing -Wmissing-sentinel warnings.
+%ignore h_sequence;
+%ignore h_sequence__m;
+%ignore h_choice;
+%ignore h_choice__m;
+%ignore h_permutation;
+%ignore h_permutation__m;
+
 // Ignore functions declared in hammer.h but not present in the library.
 %ignore h_get_backend_with_params_by_name__m;
 
@@ -176,7 +187,12 @@
 #include "glue.h"
 %}
 %include "allocator.h"
+%warnfilter(451) hammer_h;
 %include "hammer.h"
+
+// HArena_ is an opaque type (forward declaration only in allocator.h).
+// Provide a body so SWIG can process the %extend below.
+struct HArena_ {};
 
 %extend HArena_ {
   ~HArena_() {
@@ -214,12 +230,12 @@
       return PyLong_FromUnsignedLong(token->token_data.uint);
     case TT_SEQUENCE:
       ret = PyTuple_New(token->token_data.seq->used);
-      for (int i = 0; i < token->token_data.seq->used; i++) {
+      for (size_t i = 0; i < token->token_data.seq->used; i++) {
 	PyTuple_SET_ITEM(ret, i, hpt_to_python(token->token_data.seq->elements[i]));
       }
       return ret;
     default:
-      if (token->token_type == h_tt_python) {
+      if (token->token_type == (HTokenType)h_tt_python) {
 	ret = (PyObject*)token->token_data.user;
 	Py_INCREF(ret);
 	return ret;
