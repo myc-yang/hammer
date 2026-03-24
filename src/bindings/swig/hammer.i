@@ -119,7 +119,7 @@
   static int h_tt_python;
   %}
 %init %{
-  h_tt_python = h_allocate_token_type("com.upstandinghackers.hammer.python");
+  h_tt_python = h_allocate_token_type("com.riversideresearch.hammer.python");
   %}
 
 
@@ -146,8 +146,71 @@
   static struct HParsedToken_* call_action(const struct HParseResult_ *p, void* user_data);
   static bool call_predicate(struct HParseResult_ *p, void* user_data);
  %}
-#else
+#elif !defined(SWIGJAVA)
   #warning no uint8_t* typemaps defined
+#endif
+
+#if defined(SWIGJAVA)
+
+%ignore HCountedArray_;
+
+// Map byte[] ↔ (const uint8_t* input, size_t length) and all equivalent argument pairs.
+%typemap(jni)    (const uint8_t* input, size_t length) "jbyteArray"
+%typemap(jtype)  (const uint8_t* input, size_t length) "byte[]"
+%typemap(jstype) (const uint8_t* input, size_t length) "byte[]"
+%typemap(javain) (const uint8_t* input, size_t length) "$javainput"
+%typemap(in) (const uint8_t* input, size_t length) {
+  $1 = (uint8_t*)JCALL2(GetByteArrayElements, jenv, $input, 0);
+  $2 = (size_t)JCALL1(GetArrayLength, jenv, $input);
+}
+%typemap(argout) (const uint8_t* input, size_t length) {
+  JCALL3(ReleaseByteArrayElements, jenv, $input, (jbyte*)$1, JNI_ABORT);
+}
+%typemap(freearg) (const uint8_t* input, size_t length) ""
+%apply (const uint8_t* input, size_t length) {
+  (uint8_t* str, size_t len),
+  (const uint8_t* str, const size_t len),
+  (const uint8_t* charset, size_t length)
+}
+
+// uint8_t as short — Java's byte is signed; short avoids sign-extension confusion.
+%typemap(jni)     uint8_t "jshort"
+%typemap(jtype)   uint8_t "short"
+%typemap(jstype)  uint8_t "short"
+%typemap(javain)  uint8_t "(short)($javainput & 0xff)"
+%typemap(in)      uint8_t { $1 = (uint8_t)($input & 0xff); }
+%typemap(out)     uint8_t { $result = (jshort)$1; }
+%typemap(javaout) uint8_t { return (short)($jnicall & 0xff); }
+
+// void*[] (NULL-terminated parser array) — Java side passes HParser_[], marshalled via long[].
+%typemap(jni)    void*[] "jlongArray"
+%typemap(jtype)  void*[] "long[]"
+%typemap(jstype) void*[] "HParser[]"
+%typemap(javain) void*[] "parsersToHandles($javainput)"
+%typemap(in) void*[] {
+  int _sz = (int)JCALL1(GetArrayLength, jenv, $input);
+  jlong *_elems = JCALL2(GetLongArrayElements, jenv, $input, 0);
+  $1 = (void**)malloc((size_t)(_sz + 1) * sizeof(void *));
+  for (int _i = 0; _i < _sz; _i++) $1[_i] = (void *)(intptr_t)_elems[_i];
+  $1[_sz] = NULL;
+  JCALL3(ReleaseLongArrayElements, jenv, $input, _elems, JNI_ABORT);
+}
+%typemap(freearg) void*[] { free($1); }
+
+// Inject a helper into the hammer module class so callers can pass HParser[] where void*[] is
+// expected. It lives in hammer.java (same package as HParser), so protected getCPtr is accessible.
+%pragma(java) modulecode=%{
+  static long[] parsersToHandles(HParser[] parsers) {
+    long[] handles = new long[parsers.length];
+    for (int i = 0; i < parsers.length; i++)
+      handles[i] = HParser.getCPtr(parsers[i]);
+    return handles;
+  }
+%}
+
+// parse() returns a Java-owned HParseResult whose finalizer calls h_parse_result_free.
+%newobject HParser_::parse;
+
 #endif
 
  // All the include paths are relative to the build, i.e., ../../. If you need to build these manually (i.e., not with scons), keep that in mind.
@@ -187,7 +250,7 @@
 #include "glue.h"
 %}
 %include "allocator.h"
-%warnfilter(451) hammer_h;
+%warnfilter(451) HResultTiming;
 %include "hammer.h"
 
 // HArena_ is an opaque type (forward declaration only in allocator.h).
@@ -384,5 +447,49 @@ def int64(): return _h_int64()
 
 
 %}
+
+#endif
+
+#ifdef SWIGJAVA
+
+%extend HParser_ {
+    struct HParseResult_* parse(const uint8_t* input, size_t length) {
+        return h_parse($self, input, length);
+    }
+    bool compile(HParserBackend backend) {
+        return h_compile($self, backend, NULL) == 0;
+    }
+}
+
+%extend HParsedToken_ {
+    /* Token type as int — compare against TT_NONE, TT_BYTES, TT_SINT, TT_UINT, TT_SEQUENCE. */
+    int tokenType() {
+        return (int)$self->token_type;
+    }
+    long long sintValue() {
+        return (long long)$self->token_data.sint;
+    }
+    long long uintValue() {
+        return (long long)(unsigned long long)$self->token_data.uint;
+    }
+    size_t seqLength() {
+        return ($self->token_type == TT_SEQUENCE) ? $self->token_data.seq->used : 0;
+    }
+    /* Returns the i-th element of a TT_SEQUENCE token, or NULL if out of range. */
+    struct HParsedToken_* seqElement(size_t i) {
+        if ($self->token_type == TT_SEQUENCE && i < $self->token_data.seq->used)
+            return $self->token_data.seq->elements[i];
+        return NULL;
+    }
+    size_t bytesLength() {
+        return ($self->token_type == TT_BYTES) ? $self->token_data.bytes.len : 0;
+    }
+    /* Returns byte value at index i as a short (0-255), or -1 if out of range. */
+    short byteAt(size_t i) {
+        if ($self->token_type == TT_BYTES && i < $self->token_data.bytes.len)
+            return (short)(unsigned short)$self->token_data.bytes.token[i];
+        return -1;
+    }
+}
 
 #endif

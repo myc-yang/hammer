@@ -14,7 +14,7 @@ The main feature of MicroHammer is its significantly smaller codebase, allowing 
 - More thorough and consistent documentation
 - Windows / macOS not supported
 - Packrat parsing backend only
-- Language bindings for Python (see [Python Bindings](src/bindings/python/README.md))
+- Language bindings for Python and Java (see [Python Bindings](src/bindings/python/README.md), [Java Bindings](src/bindings/java/README.md))
 
 ## Features
 
@@ -84,6 +84,17 @@ scons bindings=python
 ```
 
 See [src/bindings/python/README.md](src/bindings/python/README.md) for the full API reference and usage guide.
+
+### Java
+
+Requires [SWIG](https://www.swig.org/) 4.x and JDK 11+.
+
+```bash
+sudo apt install swig default-jdk
+scons bindings=java
+```
+
+See [src/bindings/java/README.md](src/bindings/java/README.md) for the full API reference and usage guide.
 
 ## Examples
 

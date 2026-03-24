@@ -61,25 +61,30 @@ Notes:
 
 ### Building and testing language bindings
 
-#### Python
-
 Install the required tools:
 
 ```bash
-sudo apt install swig
+sudo apt install swig default-jdk
 pip install setuptools
 ```
 
-Build/run the Python bindings only:
+Build and test all language bindings:
+
+```bash
+scons bindings=python,java test
+```
+
+To target a specific binding, pass it individually and use its alias (`testpython` or `testjava`):
 
 ```bash
 scons bindings=python testpython
+scons bindings=java testjava
 ```
 
-Run the full test suite including Python bindings:
+If `JAVA_HOME` is not set, the build locates `javac` via `PATH`. To use a specific JDK:
 
 ```bash
-scons bindings=python test
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 scons bindings=java
 ```
 
 ### Linting Python and SCons files
