@@ -222,7 +222,7 @@ if GetOption("with_tests"):
     AlwaysBuild(ctest)
     testruns.append(ctest)
 
-if libhammer_shared is not None:
-    Export("libhammer_static libhammer_shared")
-else:
-    Export("libhammer_static")
+Export("libhammer_static libhammer_shared")
+
+for b in env.get("bindings", []):
+    env.SConscript(["bindings/%s/SConscript" % b])

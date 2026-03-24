@@ -21,7 +21,10 @@ vars.Add(
 vars.Add(
     PathVariable("prefix", "Where to install in the FHS", "/usr/local", PathVariable.PathAccept)
 )
-vars.Add("python", "Python interpreter", "python")
+vars.Add(
+    ListVariable("bindings", "Language bindings to build", "none", ["python"])
+)
+vars.Add("python", "Python interpreter", "python3")
 
 tools = ["default", "scanreplace"]
 
