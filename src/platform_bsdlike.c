@@ -6,7 +6,64 @@
 #endif
 #include "platform.h"
 
+#if defined(__rtems__)
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <errno.h>
+#include <string.h>
+
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
+
+#if __has_attribute(noreturn) || defined(__GNUC__)
+  #define H_NORETURN __attribute__((noreturn))
+#else
+  #define H_NORETURN
+#endif
+
+#if __has_attribute(unused) || defined(__GNUC__)
+  #define H_UNUSED __attribute__((unused))
+#else
+  #define H_UNUSED
+#endif
+
+static void H_UNUSED vwarnx(const char *fmt, va_list ap)
+{
+  vfprintf(stderr, fmt, ap);
+  fputc('\n', stderr);
+}
+
+static void H_UNUSED warnx(const char *fmt, ...)
+{
+  va_list ap;
+  va_start(ap, fmt);
+  vwarnx(fmt, ap);
+  va_end(ap);
+}
+
+static void H_UNUSED H_NORETURN verrx(int eval, const char *fmt, va_list ap)
+{
+  vfprintf(stderr, fmt, ap);
+  fputc('\n', stderr);
+  exit(eval);
+}
+
+static void H_UNUSED H_NORETURN errx(int eval, const char *fmt, ...)
+{
+  va_list ap;
+  va_start(ap, fmt);
+  verrx(eval, fmt, ap);
+  va_end(ap);
+  /* not reached */
+}
+
+#else
 #include <err.h>
+#endif
+
 #include <stdarg.h>
 #include <stdio.h>
 

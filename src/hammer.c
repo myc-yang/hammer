@@ -423,7 +423,7 @@ HParsedToken *act_backend_params(const HParseResult *p, void *user_data) {
 
     backend_params_t *bp = H_ALLOC(backend_params_t);
 
-    HParsedToken **fields = h_seq_elements(p->ast);
+    //HParsedToken **fields = h_seq_elements(p->ast);
 
     bp->len = h_seq_len(p->ast);
     bp->params = h_arena_malloc(p->arena, sizeof(backend_param_with_name_t) * bp->len);

@@ -188,7 +188,7 @@ static void h_slob_free(HAllocator *mm, void *p) {
 }
 
 static void *h_slob_realloc(HAllocator *mm, void *p, size_t size) {
-    SLOB *slob = (SLOB *)(mm + 1);
+    //SLOB *slob = (SLOB *)(mm + 1);
 
     assert(((void)"XXX need realloc for SLOB allocator", 0));
     return NULL;
