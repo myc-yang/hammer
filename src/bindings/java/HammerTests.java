@@ -12,7 +12,7 @@ public class HammerTests {
         System.loadLibrary("hammer_jni");
     }
 
-    // Token type constants — mirror of HTokenType_ in hammer.h.
+    // Token type constants - mirror of HTokenType_ in hammer.h.
     static final int TT_NONE     = 1;
     static final int TT_BYTES    = 2;
     static final int TT_SINT     = 4;
@@ -42,7 +42,7 @@ public class HammerTests {
     static void assertEqual(String name, long expected, long actual) {
         if (expected != actual) {
             failed++;
-            System.err.println("FAIL: " + name + " — expected " + expected + ", got " + actual);
+            System.err.println("FAIL: " + name + " - expected " + expected + ", got " + actual);
         } else {
             passed++;
         }

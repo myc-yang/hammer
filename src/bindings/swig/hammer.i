@@ -173,7 +173,7 @@
   (const uint8_t* charset, size_t length)
 }
 
-// uint8_t as short — Java's byte is signed; short avoids sign-extension confusion.
+// uint8_t as short - Java's byte is signed; short avoids sign-extension confusion.
 %typemap(jni)     uint8_t "jshort"
 %typemap(jtype)   uint8_t "short"
 %typemap(jstype)  uint8_t "short"
@@ -182,7 +182,7 @@
 %typemap(out)     uint8_t { $result = (jshort)$1; }
 %typemap(javaout) uint8_t { return (short)($jnicall & 0xff); }
 
-// void*[] (NULL-terminated parser array) — Java side passes HParser_[], marshalled via long[].
+// void*[] (NULL-terminated parser array) - Java side passes HParser_[], marshalled via long[].
 %typemap(jni)    void*[] "jlongArray"
 %typemap(jtype)  void*[] "long[]"
 %typemap(jstype) void*[] "HParser[]"
@@ -217,7 +217,7 @@
 // Suppress GCC attributes that SWIG cannot parse.
 #define __attribute__(x)
 
-// Ignore va_list variants — SWIG cannot generate correct wrappers for va_list parameters.
+// Ignore va_list variants - SWIG cannot generate correct wrappers for va_list parameters.
 %ignore h_sequence__v;
 %ignore h_sequence__mv;
 %ignore h_drop_from___v;
@@ -227,7 +227,7 @@
 %ignore h_permutation__v;
 %ignore h_permutation__mv;
 
-// Ignore varargs variants — Python uses the __a (array) variants instead.
+// Ignore varargs variants - Python uses the __a (array) variants instead.
 // Without this SWIG generates wrappers that call these sentinel-terminated functions
 // without the required NULL terminator, causing -Wmissing-sentinel warnings.
 %ignore h_sequence;
@@ -462,7 +462,7 @@ def int64(): return _h_int64()
 }
 
 %extend HParsedToken_ {
-    /* Token type as int — compare against TT_NONE, TT_BYTES, TT_SINT, TT_UINT, TT_SEQUENCE. */
+    /* Token type as int - compare against TT_NONE, TT_BYTES, TT_SINT, TT_UINT, TT_SEQUENCE. */
     int tokenType() {
         return (int)$self->token_type;
     }
