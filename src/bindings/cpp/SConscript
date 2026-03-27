@@ -7,8 +7,9 @@ import glob as _glob
 import os
 import shutil
 import subprocess
+import sys
 
-Import("env libhammer_shared testruns targets")
+Import("env libhammer_shared testruns targets binding_results binding_test_stamps")
 
 if libhammer_shared is None:
     print("Warning: C++ bindings require the shared library (not available in coverage/gprof builds). Skipping.")
@@ -99,13 +100,24 @@ cpp_test = cppenv.Program(
 )
 Default(cpp_test)
 
-cpptest = Alias(
-    "testcpp",
+reporter = os.path.join(Dir("#").abspath, "tools", "test_reporter.py")
+cppdir = os.path.join(Dir("#").abspath, env["BUILD_BASE"], "src/bindings/cpp")
+results_file = os.path.join(cppdir, "hammer_cpp.results")
+
+cpptestexec = cppenv.Command(
+    "hammer_tests.stamp",
     [cpp_test],
-    "env LD_LIBRARY_PATH=%s %s" % (hammer_lib_dir, cpp_test[0].path),
+    [
+        "LD_LIBRARY_PATH=%s %s %s --binding C++ --results-file %s -- %s"
+        % (hammer_lib_dir, sys.executable, reporter, results_file, cpp_test[0].path),
+        "touch $TARGET",
+    ],
 )
-AlwaysBuild(cpptest)
+cpptest = Alias("testcpp", [cpptestexec], cpptestexec)
+AlwaysBuild(cpptestexec)
 testruns.append(cpptest)
+binding_results.append(("C++", results_file))
+binding_test_stamps.append(cpptestexec[0])
 
 cppinstall = Alias(
     "installcpp",

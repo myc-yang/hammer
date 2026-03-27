@@ -7,7 +7,7 @@ import os
 import sys
 import shutil
 
-Import("env libhammer_shared testruns targets")
+Import("env libhammer_shared testruns targets binding_results binding_test_stamps")
 
 if libhammer_shared is None:
     print("Warning: Java bindings require the shared library (not available in coverage/gprof builds). Skipping.")
@@ -96,6 +96,9 @@ javaenv.Depends(jar_file, jni_lib)
 Default(jar_file)
 
 # Run the Java test suite.
+reporter = os.path.join(Dir("#").abspath, "tools", "test_reporter.py")
+results_file = os.path.join(javadir, "hammer_java.results")
+
 javatestenv = javaenv.Clone()
 javatestenv["ENV"]["LD_LIBRARY_PATH"] = hammer_lib_dir + ":" + javadir
 javatestexec = javatestenv.Command(
@@ -105,7 +108,9 @@ javatestexec = javatestenv.Command(
         "javac -cp " + os.path.join(javadir, "hammer.jar") +
         " -d " + java_classes_dir + " $SOURCE",
         "LD_LIBRARY_PATH=" + hammer_lib_dir + ":" + javadir +
-        " java"
+        " " + sys.executable + " " + reporter +
+        " --binding Java --results-file " + results_file +
+        " -- java"
         " -Djava.library.path=" + javadir +
         " -cp " + java_classes_dir + ":" + os.path.join(javadir, "hammer.jar") +
         " HammerTests",
@@ -115,6 +120,8 @@ javatestexec = javatestenv.Command(
 javatest = Alias("testjava", [javatestexec], javatestexec)
 AlwaysBuild(javatestexec)
 testruns.append(javatest)
+binding_results.append(("Java", results_file))
+binding_test_stamps.append(javatestexec[0])
 
 javainstallexec = javaenv.Command(
     None, jar_file,
