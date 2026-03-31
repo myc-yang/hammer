@@ -123,9 +123,8 @@ testruns.append(javatest)
 binding_results.append(("Java", results_file))
 binding_test_stamps.append(javatestexec[0])
 
-javainstallexec = javaenv.Command(
-    None, jar_file,
-    "install -m 644 " + os.path.join(javadir, "hammer.jar") + " /usr/local/share/java/",
-)
-javainstall = Alias("installjava", [javainstallexec], javainstallexec)
+jar_install = javaenv.Install('$prefix/share/java', jar_file)
+jni_install = javaenv.Install('$prefix/lib', jni_lib)
+
+javainstall = Alias("installjava", [jar_install, jni_install])
 targets.append(javainstall)
