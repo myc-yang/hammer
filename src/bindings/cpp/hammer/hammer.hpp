@@ -213,6 +213,50 @@ namespace hammer {
       h_bind_indirect((HParser*)parser, p.parser);
     }
   };
+
+  static inline Parser Bytes(size_t len) { return Parser(h_bytes(len)); }
+
+  static inline Parser Permutation(Parser p, ...) {
+    va_list ap;
+    va_start(ap, p);
+    HParser* ret = h_permutation__v(*(HParser**)(void*)&p, ap);
+    va_end(ap);
+    return Parser(ret);
+  }
+
+  // Indices to drop are terminated by -1, e.g. DropFrom(seq, 0, 2, -1).
+  static inline Parser DropFrom(Parser p, ...) {
+    va_list ap;
+    va_start(ap, p);
+    HParser* ret = h_drop_from___v(*(HParser**)(void*)&p, ap);
+    va_end(ap);
+    return Parser(ret);
+  }
+
+  static inline Parser WithEndianness(char endianness, Parser p) {
+    return Parser(h_with_endianness(endianness, p.parser));
+  }
+
+  static inline Parser PutValue(Parser p, const char *name) {
+    return Parser(h_put_value(p.parser, name));
+  }
+  static inline Parser GetValue(const char *name) {
+    return Parser(h_get_value(name));
+  }
+  static inline Parser FreeValue(const char *name) {
+    return Parser(h_free_value(name));
+  }
+
+  static inline Parser Bind(Parser p, HContinuation k, void *env) {
+    return Parser(h_bind(p.parser, k, env));
+  }
+  static inline Parser Bind(Parser p, HContinuation k) {
+    return Parser(h_bind(p.parser, k, NULL));
+  }
+
+  static inline Parser Skip(size_t n) { return Parser(h_skip(n)); }
+  static inline Parser Seek(ssize_t offset, int whence) { return Parser(h_seek(offset, whence)); }
+  static inline Parser Tell() { return Parser(h_tell()); }
 }
 
 #pragma GCC diagnostic pop

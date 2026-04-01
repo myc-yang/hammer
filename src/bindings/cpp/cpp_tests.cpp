@@ -353,6 +353,74 @@ namespace {
     EXPECT_TRUE(ParsesTo(p, "aaa", "(u0x61 (u0x61 (u0x61)))"));
   }
 
+  TEST(ParserTypes, Bytes) {
+    Parser p = Bytes(2);
+    EXPECT_TRUE(ParsesTo(p, "ab", "<61.62>"));
+    EXPECT_TRUE(ParseFails(p, "a"));
+    EXPECT_TRUE(ParseFails(p, ""));
+  }
+
+  TEST(ParserTypes, Permutation) {
+    Parser p = Permutation(Ch('a'), Ch('b'), NULL);
+    EXPECT_TRUE(ParsesTo(p, "ab", "(u0x61 u0x62)"));
+    EXPECT_TRUE(ParsesTo(p, "ba", "(u0x61 u0x62)"));
+    EXPECT_TRUE(ParseFails(p, "aa"));
+    EXPECT_TRUE(ParseFails(p, "b"));
+  }
+
+  TEST(ParserTypes, DropFrom) {
+    Parser seq = Sequence(Ch('a'), Ch('b'), Ch('c'), NULL);
+    Parser p = DropFrom(seq, 1, -1);
+    EXPECT_TRUE(ParsesTo(p, "abc", "(u0x61 u0x63)"));
+    EXPECT_TRUE(ParseFails(p, "ab"));
+  }
+
+  TEST(ParserTypes, WithEndianness) {
+    Parser p = WithEndianness(BYTE_LITTLE_ENDIAN | BIT_BIG_ENDIAN, Uint16());
+    EXPECT_TRUE(ParsesTo(p, std::string("\x01\x00", 2), "u0x1"));
+    EXPECT_TRUE(ParseFails(p, "\x01"));
+  }
+
+  TEST(ParserTypes, PutGetValue) {
+    Parser p = Sequence(PutValue(Ch('a'), "c"), GetValue("c"), NULL);
+    EXPECT_TRUE(ParsesTo(p, "a", "(u0x61 u0x61)"));
+    EXPECT_TRUE(ParseFails(p, "b"));
+  }
+
+  TEST(ParserTypes, FreeValue) {
+    Parser p = Sequence(PutValue(Ch('a'), "c"), FreeValue("c"), NULL);
+    EXPECT_TRUE(ParsesTo(p, "a", "(u0x61 u0x61)"));
+    EXPECT_TRUE(ParseFails(p, "b"));
+  }
+
+  static HParser* bind_next(HAllocator *mm__, const HParsedToken *x, void *env) {
+    (void)mm__; (void)env; (void)x;
+    return h_ch('b');
+  }
+
+  TEST(ParserTypes, Bind) {
+    Parser p = Bind(Ch('a'), bind_next);
+    EXPECT_TRUE(ParsesTo(p, "ab", "u0x62"));
+    EXPECT_TRUE(ParseFails(p, "ac"));
+    EXPECT_TRUE(ParseFails(p, "b"));
+  }
+
+  TEST(ParserTypes, Skip) {
+    Parser p = Sequence(Skip(8), Ch('b'), NULL);
+    EXPECT_TRUE(ParsesTo(p, "ab", "(u0x62)"));
+    EXPECT_TRUE(ParseFails(p, "b"));
+  }
+
+  TEST(ParserTypes, Tell) {
+    Parser p = Sequence(Ch('a'), Tell(), NULL);
+    EXPECT_TRUE(ParsesTo(p, "a", "(u0x61 u0x8)"));
+  }
+
+  TEST(ParserTypes, Seek) {
+    Parser p = Sequence(Ch('a'), Seek(0, SEEK_SET), Ch('a'), NULL);
+    EXPECT_TRUE(ParsesTo(p, "a", "(u0x61 u0 u0x61)"));
+  }
+
 };
 
 int main(int argc, char** argv) {
