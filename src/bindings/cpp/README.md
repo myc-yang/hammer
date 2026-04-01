@@ -38,10 +38,6 @@ g++ -std=c++14 -I/usr/local/include/hammer -o myparser myparser.cpp -lhammer
 #include <hammer/hammer.hpp>
 #include <iostream>
 
-static {
-    System.loadLibrary("hammer_jni");
-}
-
 int main() {
     using namespace hammer;
 
