@@ -84,7 +84,7 @@ namespace {
   TEST(ParserTypes, Uint8) {
     Parser p = Uint8();
     EXPECT_TRUE(ParsesTo(p, "\x78", "u0x78"));
-    EXPECT_TRUE(ParsesTo(p, "\x00", "u0x0"));
+    EXPECT_TRUE(ParsesTo(p, std::string("\x00", 1), "u0"));
     EXPECT_TRUE(ParseFails(p, ""));
   }
 
