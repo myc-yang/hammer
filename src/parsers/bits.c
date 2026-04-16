@@ -4,7 +4,7 @@
 #include <assert.h>
 
 struct bits_env {
-    uint8_t length;
+    size_t length;
     uint8_t signedp;
 };
 
@@ -13,9 +13,9 @@ static HParseResult *parse_bits(void *env, HParseState *state) {
     HParsedToken *result = a_new(HParsedToken, 1);
     result->token_type = (env_->signedp ? TT_SINT : TT_UINT);
     if (env_->signedp)
-        result->sint = h_read_bits(&state->input_stream, env_->length, true);
+        result->sint = h_read_bits(&state->input_stream, (int)env_->length, true);
     else
-        result->uint = h_read_bits(&state->input_stream, env_->length, false);
+        result->uint = h_read_bits(&state->input_stream, (int)env_->length, false);
     result->index = 0;
     result->bit_length = 0;
     result->bit_offset = 0;

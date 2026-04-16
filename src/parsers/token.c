@@ -5,12 +5,12 @@
 
 typedef struct {
     uint8_t *str;
-    uint8_t len;
+    size_t len;
 } HToken;
 
 static HParseResult *parse_token(void *env, HParseState *state) {
     HToken *t = (HToken *)env;
-    for (int i = 0; i < t->len; ++i) {
+    for (size_t i = 0; i < t->len; ++i) {
         uint8_t chr = (uint8_t)h_read_bits(&state->input_stream, 8, false);
         if (t->str[i] != chr) {
             return NULL;
@@ -76,11 +76,9 @@ HParser *h_token(const uint8_t *str, const size_t len) {
     return h_token__m(&system_allocator, str, len);
 }
 HParser *h_token__m(HAllocator *mm__, const uint8_t *str, const size_t len) {
-    // Length has to be <= 255 (uint8) as defined by HToken struct
-    assert(len <= UINT8_MAX);
     HToken *t = h_new(HToken, 1);
     uint8_t *str_cpy = h_new(uint8_t, len);
     memcpy(str_cpy, str, len);
-    t->str = str_cpy, t->len = (uint8_t)len;
+    t->str = str_cpy, t->len = len;
     return h_new_parser(mm__, &token_vt, t);
 }
