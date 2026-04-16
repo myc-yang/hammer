@@ -112,7 +112,8 @@ void h_slist_push(HSlist *slist, void *item) {
 }
 
 bool h_slist_find(HSlist *slist, const void *item) {
-    assert(item != NULL);
+    if (item == NULL)
+        return false;
     HSlistNode *head = slist->head;
     while (head != NULL) {
         if (head->elem == item)
@@ -123,7 +124,8 @@ bool h_slist_find(HSlist *slist, const void *item) {
 }
 
 HSlist *h_slist_remove_all(HSlist *slist, const void *item) {
-    assert(item != NULL);
+    if (item == NULL)
+        return slist;
     HSlistNode *node = slist->head;
     HSlistNode *prev = NULL;
     while (node != NULL) {

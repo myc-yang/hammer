@@ -218,8 +218,8 @@ HParsedToken *h_make_float(HArena *arena, float val);
 
 /** Extract (cast) type-specific value back from HParsedTokens... */
 
-/** Pass-through assertion that a given token has the expected type. */
-#define h_assert_type(T, P) (assert(P->token_type == (HTokenType)T), P)
+/** Pass-through check that a given token has the expected type. Returns NULL on mismatch. */
+#define h_assert_type(T, P) ((P)->token_type == (HTokenType)(T) ? (P) : NULL)
 
 /** Convenience short-hand forms of h_assert_type. */
 #define H_ASSERT(TYP, TOK) h_assert_type(TT_##TYP, TOK)

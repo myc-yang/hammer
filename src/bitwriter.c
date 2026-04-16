@@ -52,7 +52,10 @@ static void h_bit_writer_reserve(HBitWriter *w, size_t nbits) {
 }
 
 void h_bit_writer_put(HBitWriter *w, uint64_t data, size_t nbits) {
-    assert(nbits > 0); // Less than or equal to zero makes complete nonsense
+    if (nbits == 0) {
+        w->error = 1;
+        return;
+    }
 
     // expand size...
     h_bit_writer_reserve(w, nbits);
@@ -90,10 +93,12 @@ void h_bit_writer_put(HBitWriter *w, uint64_t data, size_t nbits) {
 }
 
 const uint8_t *h_bit_writer_get_buffer(HBitWriter *w, size_t *len) {
-    assert(len != NULL);
-    assert(w != NULL);
-    // Not entirely sure how to handle a non-integral number of bytes... make it an error for now
-    assert(w->bit_offset == 0); // BUG: change this to some sane behaviour
+    if (w == NULL || len == NULL)
+        return NULL;
+    if (w->bit_offset != 0) {
+        w->error = 1;
+        return NULL;
+    }
 
     *len = w->index;
     return w->buf;

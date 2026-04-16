@@ -78,7 +78,8 @@ HParsedToken *h_make_(HArena *arena, HTokenType type) {
 }
 
 HParsedToken *h_make(HArena *arena, HTokenType type, void *value) {
-    assert(type >= TT_USER);
+    if (type < TT_USER)
+        return NULL;
     HParsedToken *ret = h_make_(arena, type);
     ret->user = value;
     return ret;
@@ -129,25 +130,26 @@ HParsedToken *h_make_float(HArena *arena, float val) {
 
 // XXX -> internal
 HParsedToken *h_carray_index(const HCountedArray *a, size_t i) {
-    assert(i < a->used);
+    if (i >= a->used)
+        return NULL;
     return a->elements[i];
 }
 
 size_t h_seq_len(const HParsedToken *p) {
-    assert(p != NULL);
-    assert(p->token_type == TT_SEQUENCE);
+    if (p == NULL || p->token_type != TT_SEQUENCE)
+        return 0;
     return p->seq->used;
 }
 
 HParsedToken **h_seq_elements(const HParsedToken *p) {
-    assert(p != NULL);
-    assert(p->token_type == TT_SEQUENCE);
+    if (p == NULL || p->token_type != TT_SEQUENCE)
+        return NULL;
     return p->seq->elements;
 }
 
 HParsedToken *h_seq_index(const HParsedToken *p, size_t i) {
-    assert(p != NULL);
-    assert(p->token_type == TT_SEQUENCE);
+    if (p == NULL || p->token_type != TT_SEQUENCE)
+        return NULL;
     return h_carray_index(p->seq, i);
 }
 
@@ -172,17 +174,17 @@ HParsedToken *h_seq_index_vpath(const HParsedToken *p, size_t i, va_list va) {
 }
 
 void h_seq_snoc(HParsedToken *xs, const HParsedToken *x) {
-    assert(xs != NULL);
-    assert(xs->token_type == TT_SEQUENCE);
+    if (xs == NULL || xs->token_type != TT_SEQUENCE)
+        return;
 
     h_carray_append(xs->seq, (HParsedToken *)x);
 }
 
 void h_seq_append(HParsedToken *xs, const HParsedToken *ys) {
-    assert(xs != NULL);
-    assert(xs->token_type == TT_SEQUENCE);
-    assert(ys != NULL);
-    assert(ys->token_type == TT_SEQUENCE);
+    if (xs == NULL || xs->token_type != TT_SEQUENCE)
+        return;
+    if (ys == NULL || ys->token_type != TT_SEQUENCE)
+        return;
 
     for (size_t i = 0; i < ys->seq->used; i++)
         h_carray_append(xs->seq, ys->seq->elements[i]);
@@ -191,7 +193,8 @@ void h_seq_append(HParsedToken *xs, const HParsedToken *ys) {
 // Flatten nested sequences. Always returns a sequence.
 // If input element is not a sequence, returns it as a singleton sequence.
 const HParsedToken *h_seq_flatten(HArena *arena, const HParsedToken *p) {
-    assert(p != NULL);
+    if (p == NULL)
+        return NULL;
 
     HParsedToken *ret = h_make_seq(arena);
     switch (p->token_type) {
