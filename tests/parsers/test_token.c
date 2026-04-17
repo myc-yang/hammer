@@ -63,7 +63,7 @@ static void test_token_len_assert(gconstpointer backend) {
 void register_token_tests(void) {
     g_test_add_data_func("/core/parser/packrat/reshape_token", GINT_TO_POINTER(PB_PACKRAT),
                          test_reshape_token);
-                        
+
     g_test_add_data_func("/core/parser/packrat/token_len_assert", GINT_TO_POINTER(PB_PACKRAT),
                          test_token_len_assert);
 }
