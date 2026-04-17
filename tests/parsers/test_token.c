@@ -39,22 +39,23 @@ static void test_reshape_token(gconstpointer backend) {
 }
 
 // Test token.c: tokens longer than 255 bytes are now supported
+#define TOKEN_TEST_LEN 256
 static void test_token_len_assert(gconstpointer backend) {
     HParserBackend be = (HParserBackend)GPOINTER_TO_INT(backend);
 
-    uint8_t expected[256];
+    uint8_t expected[TOKEN_TEST_LEN];
     memset(expected, 0x41, sizeof(expected));
 
-    HParser *parser = h_token(expected, sizeof(expected));
+    HParser *parser = h_token(expected, TOKEN_TEST_LEN);
     g_check_cmp_ptr(parser, !=, NULL);
 
     h_compile(parser, be, NULL);
-    HParseResult *res = h_parse(parser, expected, sizeof(expected));
+    HParseResult *res = h_parse(parser, expected, TOKEN_TEST_LEN);
     g_check_cmp_ptr(res, !=, NULL);
     if (res) {
         g_check_cmp_ptr(res->ast, !=, NULL);
         if (res->ast && res->ast->token_type == TT_BYTES)
-            g_check_cmp_int(res->ast->bytes.len, ==, 256);
+            g_check_cmp_int(res->ast->bytes.len, ==, TOKEN_TEST_LEN);
         h_parse_result_free(res);
     }
 }

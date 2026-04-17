@@ -12,6 +12,7 @@ static HParseResult *parse_bits(void *env, HParseState *state) {
     struct bits_env *env_ = env;
     HParsedToken *result = a_new(HParsedToken, 1);
     result->token_type = (env_->signedp ? TT_SINT : TT_UINT);
+    // h_read_bits takes int; cast is required by its signature
     if (env_->signedp)
         result->sint = h_read_bits(&state->input_stream, (int)env_->length, true);
     else
