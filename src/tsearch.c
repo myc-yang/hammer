@@ -110,7 +110,7 @@ void twalk(const void *vroot, void (*action)(const void *, VISIT, int)) {
 /*	$OpenBSD: tfind.c,v 1.6 2014/03/16 18:38:30 guenther Exp $	*/
 
 /* find a node, or return 0 */
-void *tfind(const void *vkey, void *const *vrootp, int (*compar)(const void *, const void *)) {
+void *tfind(const void *vkey, void **vrootp, int (*compar)(const void *, const void *)) {
     char *key = (char *)vkey;
     node **rootp = (node **)vrootp;
 
