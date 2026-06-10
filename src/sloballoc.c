@@ -25,8 +25,10 @@ struct slob {
 SLOB *slobinit(void *mem, size_t size) {
     SLOB *slob = mem;
 
-    assert(size >= sizeof(SLOB) + sizeof(struct block));
-    assert(size < UINTPTR_MAX - (uintptr_t)mem);
+    if (size < sizeof(SLOB) + sizeof(struct block))
+        return NULL;
+    if (size >= UINTPTR_MAX - (uintptr_t)mem)
+        return NULL;
 
     slob = mem;
     slob->size = size - sizeof(SLOB);
