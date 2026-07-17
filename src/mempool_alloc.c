@@ -64,8 +64,8 @@ static void *mempool_alloc(HAllocator *allocator, size_t size) {
     #ifdef RTEMS_BUILD
     if(size ==0) size=1;
     #endif // #ifdef RTEMS_BUILD
-    void *block = a->buf;
-    CFE_ES_GetPoolBuf(block, a->PoolId, size);
+    void *block;
+    CFE_ES_GetPoolBuf((void **)&block, a->PoolId, block_size(size));
     // void *block = malloc(block_size(size));
     if (!block) {
         return NULL;
@@ -81,7 +81,7 @@ static void *mempool_alloc(HAllocator *allocator, size_t size) {
 static void mempool_free(HAllocator *allocator, void *uptr) {
     MemPoolAllocator *a = (MemPoolAllocator *)allocator;
     if (uptr) {
-        CFE_ES_PutPoolBuf(a->PoolId, uptr);
+        CFE_ES_PutPoolBuf(a->PoolId, (uint32 *)uptr);
         // free(block_for_user_ptr(uptr));
     }
 }
