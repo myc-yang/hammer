@@ -19,7 +19,7 @@
 
 // Change these to be bound to what is needed for grammar. More than likely that implies increasing Parse Pool
 #define GRAMMAR_POOL_SIZE  (256u * 1024u)        /* 256 KB */
-#define PARSE_POOL_SIZE    (256u * 1024u)  /* 256 MB   */
+#define PARSE_POOL_SIZE    (2 * 1024u * 1024u)  /* 2048 MB   */
 
 // SPARC Alignment
 #define SA_ALIGN 8u
