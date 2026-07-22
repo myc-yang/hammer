@@ -18,8 +18,8 @@
 #include <stdint.h> 
 
 // Change these to be bound to what is needed for grammar. More than likely that implies increasing Parse Pool
-#define GRAMMAR_POOL_SIZE  (256u * 1024u)        /* 256 KB */
-#define PARSE_POOL_SIZE    (256u * 1024u)  /* 256 MB   */
+#define GRAMMAR_POOL_SIZE  (256u * 1024u) // 256 KB
+#define PARSE_POOL_SIZE    (256u * 1024u) // 256 KB, change to what is needed by each parse call
 
 // SPARC Alignment
 #define SA_ALIGN 8u
