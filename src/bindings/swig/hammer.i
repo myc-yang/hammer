@@ -19,7 +19,10 @@
 %rename("_%s") "";
 // %rename(_h_ch) h_ch;
 
-%warnfilter(454) register_helpers;
+/* Internal references retained by register_helpers(); they are not part of the
+ * language binding API and must not receive generated pointer setters. */
+%ignore _helper_Placeholder;
+%ignore _helper_ParseError;
 %inline {
   static PyObject *_helper_Placeholder = NULL, *_helper_ParseError = NULL;
 
@@ -264,6 +267,20 @@
 %ignore HCaseResult_::timestamp;
 %ignore HParsedToken_::token_data;
 
+/* HParseError is borrowed from HParseDiagnostic.  Its string fields are
+ * diagnostic output, not caller-owned storage, so exposing setters would both
+ * violate the ownership contract and make SWIG allocate strings it cannot
+ * safely release. */
+%immutable HParseError_::parser;
+%immutable HParseError_::message;
+
+/* These are caller-populated C input records whose const char pointers are
+ * intentionally borrowed.  Keep their existing binding setters for
+ * compatibility; SWIG cannot express that shallow lifetime contract and emits
+ * its conservative char-pointer warning. */
+%warnfilter(451) HSourceLocation_::file_name;
+%warnfilter(451) HSourceLocation_::function_name;
+%warnfilter(451) HParserTestcase_::output_unambiguous;
 %warnfilter(451) HResultTiming;
 %include "hammer.h"
 
