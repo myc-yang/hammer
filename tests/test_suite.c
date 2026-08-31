@@ -24,6 +24,9 @@
 extern void register_bitreader_tests(void);
 extern void register_bitwriter_tests(void);
 extern void register_parser_tests(void);
+extern void register_charset_tests(void);
+extern void register_ignoreseq_tests(void);
+extern void register_indirect_tests(void);
 extern void register_floating_point_parser_tests(void);
 extern void register_basic_parser_tests(void);
 extern void register_integer_parser_tests(void);
@@ -71,6 +74,9 @@ int main(int argc, char **argv) {
     register_bitreader_tests();
     register_bitwriter_tests();
     register_parser_tests();
+    register_charset_tests();
+    register_ignoreseq_tests();
+    register_indirect_tests();
     register_floating_point_parser_tests();
     register_basic_parser_tests();
     register_integer_parser_tests();
