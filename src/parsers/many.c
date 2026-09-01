@@ -80,8 +80,9 @@ static bool many_isValidCF(void *env) {
 
 // turn (_ x (_ y (_ z ()))) into (x y z) where '_' are optional
 static HParsedToken *reshape_many(const HParseResult *p, void *user) {
+    if(!p || !p->ast)
+        return NULL;
     HCountedArray *seq = h_carray_new(p->arena);
-
     const HParsedToken *tok = p->ast;
     while (tok) {
         assert(tok->token_type == TT_SEQUENCE);

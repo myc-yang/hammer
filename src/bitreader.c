@@ -86,8 +86,8 @@ int64_t h_read_bits(HInputStream *state, size_t count, char signed_p) {
                 } else {
                     segment_len = count;
                     state->bit_offset += (uint8_t)count;
-                    segment = (state->input[state->index] >> (8 - state->bit_offset)) &
-                              ((1 << segment_len) - 1);
+                    segment = (state->input[state->index] >> (8u - state->bit_offset)) &
+                              ((1u << segment_len) - 1u);
                 }
             } else { // BIT_LITTLE_ENDIAN
                 if (count + state->bit_offset + state->margin >= 8) {
@@ -100,7 +100,7 @@ int64_t h_read_bits(HInputStream *state, size_t count, char signed_p) {
                 } else {
                     segment_len = count;
                     segment = (state->input[state->index] >> state->bit_offset) &
-                              ((1 << segment_len) - 1);
+                              ((1u << segment_len) - 1u);
                     state->bit_offset += (uint8_t)segment_len;
                 }
             }

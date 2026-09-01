@@ -940,6 +940,8 @@ int h_compile_for_backend_with_params(HParser *parser, HParserBackendWithParams 
 
 int h_compile_for_backend_with_params__m(HAllocator *mm__, HParser *parser,
                                          HParserBackendWithParams *be_with_params) {
+    if(!be_with_params || !be_with_params->backend)
+        return -1;
     int ret = h_compile__m(mm__, parser, be_with_params->backend, be_with_params->params);
     if (!ret)
         be_with_params->backend_vtable = parser->backend_vtable;

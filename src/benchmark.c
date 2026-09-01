@@ -69,7 +69,7 @@ HBenchmarkResults *h_benchmark__m(HAllocator *mm__, HParser *parser, HParserTest
             } else
                 res_unamb = NULL;
             if ((res_unamb == NULL && tc->output_unambiguous != NULL) ||
-                (res_unamb != NULL && strcmp(res_unamb, tc->output_unambiguous) != 0)) {
+                (res_unamb != NULL && tc->output_unambiguous != NULL && strcmp(res_unamb, tc->output_unambiguous) != 0)) {
                 // test case failed...
                 fprintf(stderr, "Parsing with %s failed\n", benchmark_backend_name(backend));
                 // We want to run all testcases, for purposes of generating a
