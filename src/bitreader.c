@@ -28,7 +28,7 @@
 #define LDB(range, i) (((i) >> LSB(range)) & ((1 << (MSB(range) - LSB(range) + 1)) - 1))
 
 int64_t h_read_bits(HInputStream *state, size_t count, char signed_p) {
-    // BUG: Does not
+    HAMMER_ASSERT(count <= 64);
     size_t original_count = count;
     uint64_t out = 0;
     size_t offset = 0;
@@ -86,8 +86,8 @@ int64_t h_read_bits(HInputStream *state, size_t count, char signed_p) {
                 } else {
                     segment_len = count;
                     state->bit_offset += (uint8_t)count;
-                    segment = (state->input[state->index] >> (8u - state->bit_offset)) &
-                              ((1u << segment_len) - 1u);
+                    segment = (state->input[state->index] >> (8 - state->bit_offset)) &
+                              ((1 << segment_len) - 1);
                 }
             } else { // BIT_LITTLE_ENDIAN
                 if (count + state->bit_offset + state->margin >= 8) {
@@ -100,7 +100,7 @@ int64_t h_read_bits(HInputStream *state, size_t count, char signed_p) {
                 } else {
                     segment_len = count;
                     segment = (state->input[state->index] >> state->bit_offset) &
-                              ((1u << segment_len) - 1u);
+                              ((1 << segment_len) - 1);
                     state->bit_offset += (uint8_t)segment_len;
                 }
             }

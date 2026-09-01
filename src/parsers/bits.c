@@ -15,9 +15,7 @@ static HParseResult *parse_bits(void *env, HParseState *state) {
     result->token_type = (env_->signedp ? TT_SINT : TT_UINT);
     /*
      * h_bits returns an integer token, so values wider than 64 bits are
-     * truncated by the integer accumulator. The parser still consumes the
-     * requested bit count; callers that need wider fields should use h_bytes()
-     * or compose smaller parsers.
+     * rejected
      */
     if (env_->signedp)
         result->token_data.sint = h_read_bits(&state->input_stream, env_->length, true);
@@ -34,7 +32,7 @@ static HParsedToken *reshape_bits(const HParseResult *p, void *signedp_p) {
     bool signedp = (signedp_p != NULL);
     // XXX works only for whole bytes
     // XXX assumes big-endian
-    // Values wider than 64 bits are truncated by the integer accumulator.
+    // Values wider than 64 bits are rejected
     assert(p->ast);
     assert(p->ast->token_type == TT_SEQUENCE);
 
@@ -142,6 +140,8 @@ static const HParserVtable bits_vt = {
 
 HParser *h_bits(size_t len, bool sign) { return h_bits__m(&system_allocator, len, sign); }
 HParser *h_bits__m(HAllocator *mm__, size_t len, bool sign) {
+    if(len>64)
+        return NULL;
     struct bits_env *env = h_new(struct bits_env, 1);
     env->length = len;
     env->signedp = sign;

@@ -99,7 +99,8 @@ static HParsedToken *reshape_many(const HParseResult *p, void *user) {
     HParsedToken *res = a_new_(p->arena, HParsedToken, 1);
     res->token_type = TT_SEQUENCE;
     res->token_data.seq = seq;
-    res->index = p->ast->index;
+    if(p->ast->index)
+        res->index = p->ast->index;
     res->bit_offset = p->ast->bit_offset;
     res->bit_length = p->bit_length;
     return res;
