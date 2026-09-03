@@ -23,6 +23,7 @@
 #include <inttypes.h> // PRIu64 etc.
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h> // memcpy(), memset()
@@ -85,6 +86,13 @@ typedef struct HTracePendingFailure_ {
     bool present;
 } HTracePendingFailure;
 
+typedef struct {
+    char *data;
+    size_t length;
+    size_t capacity;
+    bool disabled;
+} HTraceWriter;
+
 typedef struct HTraceContext_ {
     const uint8_t *input;
     size_t input_len;
@@ -130,16 +138,106 @@ typedef struct HTraceContext_ {
 
 struct HTraceState_ {
     bool print_summary;
-    FILE *execution_stream;
+    HTraceWriter execution_writer;
     HParseDiagnostic completed;
     HTraceContext *context;
 };
+
+static void trace_writer_disable(HTraceWriter *writer) {
+    if (writer)
+        writer->disabled = true;
+}
+
+static bool trace_writer_reserve(HTraceWriter *writer, size_t additional) {
+    if (!writer || writer->disabled)
+        return false;
+    if (writer->length == SIZE_MAX || additional > SIZE_MAX - writer->length - 1) {
+        trace_writer_disable(writer);
+        return false;
+    }
+
+    size_t required = writer->length + additional + 1;
+    if (required <= writer->capacity)
+        return true;
+
+    size_t capacity = writer->capacity ? writer->capacity : 256;
+    while (capacity < required) {
+        if (capacity > SIZE_MAX / 2) {
+            capacity = required;
+            break;
+        }
+        capacity *= 2;
+    }
+
+    char *data = realloc(writer->data, capacity);
+    if (!data) {
+        trace_writer_disable(writer);
+        return false;
+    }
+    writer->data = data;
+    writer->capacity = capacity;
+    return true;
+}
+
+static void trace_writer_append_n(HTraceWriter *writer, const char *data, size_t length) {
+    if (!length || !trace_writer_reserve(writer, length))
+        return;
+    memcpy(writer->data + writer->length, data, length);
+    writer->length += length;
+    writer->data[writer->length] = '\0';
+}
+
+static void trace_writer_append(HTraceWriter *writer, const char *text) {
+    if (text)
+        trace_writer_append_n(writer, text, strlen(text));
+}
+
+static void trace_writer_putc(HTraceWriter *writer, char character) {
+    trace_writer_append_n(writer, &character, 1);
+}
+
+static void trace_writer_vprintf(HTraceWriter *writer, const char *format, va_list arguments) {
+    if (!writer || writer->disabled)
+        return;
+
+    char buffer[256];
+    va_list copy;
+    va_copy(copy, arguments);
+    int length = vsnprintf(buffer, sizeof(buffer), format, copy);
+    va_end(copy);
+    if (length < 0) {
+        trace_writer_disable(writer);
+        return;
+    }
+
+    if ((size_t)length < sizeof(buffer)) {
+        trace_writer_append_n(writer, buffer, (size_t)length);
+        return;
+    }
+
+    if (!trace_writer_reserve(writer, (size_t)length))
+        return;
+    (void)vsnprintf(writer->data + writer->length, (size_t)length + 1, format, arguments);
+    writer->length += (size_t)length;
+}
+
+static void trace_writer_printf(HTraceWriter *writer, const char *format, ...) {
+    va_list arguments;
+    va_start(arguments, format);
+    trace_writer_vprintf(writer, format, arguments);
+    va_end(arguments);
+}
+
+static HTraceWriter *trace_output(HTraceState *trace) {
+    if (!trace || trace->execution_writer.disabled)
+        return NULL;
+    return &trace->execution_writer;
+}
 
 HTraceState *h_trace_state_new(bool print_summary) {
     HTraceState *trace = calloc(1, sizeof(*trace));
     if (trace) {
         trace->print_summary = print_summary;
-        trace->execution_stream = tmpfile();
         trace->completed.choice_root = H_TRACE_CHOICE_NONE;
     }
     return trace;
@@ -153,48 +251,32 @@ void h_trace_state_free(HTraceState *trace) {
         free(trace->context);
         trace->context = parent;
     }
-    if (trace->execution_stream)
-        (void)fclose(trace->execution_stream);
+    free(trace->execution_writer.data);
     free(trace->completed.execution_trace);
     free(trace);
 }
 
 bool h_trace_is_enabled(const HTraceState *trace) { return trace != NULL; }
-bool h_trace_is_dump_enabled(const HTraceState *trace) { return trace && trace->execution_stream; }
+bool h_trace_is_dump_enabled(const HTraceState *trace) {
+    return trace && !trace->execution_writer.disabled;
+}
 bool h_trace_should_print_summary(const HTraceState *trace) {
     return trace && trace->print_summary;
 }
 
-static void trace_snapshot_execution(HTraceState *trace) {
-    if (!trace || !trace->execution_stream)
+static void trace_finalize_execution(HTraceState *trace) {
+    if (!trace)
         return;
-    FILE *stream = trace->execution_stream;
-    if (fflush(stream) != 0 || fseek(stream, 0, SEEK_END) != 0)
-        return;
-    long end = ftell(stream);
-    if (end < 0 || (uintmax_t)end > SIZE_MAX - 1 || fseek(stream, 0, SEEK_SET) != 0)
-        return;
-    size_t length = (size_t)end;
-    char *text = malloc(length + 1);
-    if (!text) {
-        (void)fseek(stream, 0, SEEK_END);
-        return;
-    }
-    size_t read = fread(text, 1, length, stream);
-    text[read] = '\0';
     free(trace->completed.execution_trace);
-    trace->completed.execution_trace = text;
-    trace->completed.execution_trace_length = read;
-    (void)fseek(stream, 0, SEEK_END);
+    trace->completed.execution_trace = trace->execution_writer.data;
+    trace->completed.execution_trace_length = trace->execution_writer.length;
+    trace->execution_writer.data = NULL;
+    trace->execution_writer.length = 0;
+    trace->execution_writer.capacity = 0;
 }
 
-static void trace_complete(HTraceState *trace, const HTraceContext *context) {
-    HParseDiagnostic *completed = &trace->completed;
-    char *execution_trace = completed->execution_trace;
-    size_t execution_trace_length = completed->execution_trace_length;
+static void trace_complete(HParseDiagnostic *completed, const HTraceContext *context) {
     memset(completed, 0, sizeof(*completed));
-    completed->execution_trace = execution_trace;
-    completed->execution_trace_length = execution_trace_length;
     if (context) {
         completed->error = context->error;
         memcpy(completed->expected_bytes, context->expected_bytes,
@@ -214,7 +296,6 @@ static void trace_complete(HTraceState *trace, const HTraceContext *context) {
         memcpy(completed->input_frames, context->input_frames,
                context->input_frame_count * sizeof(context->input_frames[0]));
     }
-    trace_snapshot_execution(trace);
 }
 
 /* Copy the current furthest-failure record out to the caller (see trace.h).
@@ -260,12 +341,15 @@ void h_trace_get_error(const HTraceState *trace, HParseError *out) {
     trace_copy_error(out, &trace->completed.error);
 }
 
-void h_trace_get_diagnostic(const HTraceState *trace, HParseDiagnostic **out) {
+void h_trace_get_diagnostic(HTraceState *trace, HParseDiagnostic **out) {
     if (!trace || !out)
         return;
     *out = calloc(1, sizeof(**out));
     if (!*out)
         return;
+    /* The completed diagnostic is private to this state. Move the trace
+     * buffer into the caller-owned diagnostic instead of copying it. */
+    trace_finalize_execution(trace);
     trace_copy_error(&(*out)->error, &trace->completed.error);
     memcpy((*out)->expected_bytes, trace->completed.expected_bytes, sizeof((*out)->expected_bytes));
     (*out)->expected_eof = trace->completed.expected_eof;
@@ -285,9 +369,10 @@ void h_trace_get_diagnostic(const HTraceState *trace, HParseDiagnostic **out) {
     (*out)->input_frame_count = trace->completed.input_frame_count;
     memcpy((*out)->input_frames, trace->completed.input_frames,
            trace->completed.input_frame_count * sizeof(trace->completed.input_frames[0]));
-    (*out)->execution_trace = trace_strdup(trace->completed.execution_trace);
-    (*out)->execution_trace_length =
-        (*out)->execution_trace ? trace->completed.execution_trace_length : 0;
+    (*out)->execution_trace = trace->completed.execution_trace;
+    (*out)->execution_trace_length = trace->completed.execution_trace_length;
+    trace->completed.execution_trace = NULL;
+    trace->completed.execution_trace_length = 0;
 }
 
 void h_trace_note_int_range(HTraceState *trace, const HParsedToken *token, int64_t lower,
@@ -397,13 +482,13 @@ static const char *trace_tt_name(HTokenType t) {
     }
 }
 
-static void trace_indent(const HTraceState *trace) {
+static void trace_indent(HTraceState *trace) {
     size_t depth = trace && trace->context ? trace->context->depth : 0;
-    FILE *out = trace ? trace->execution_stream : NULL;
+    HTraceWriter *out = trace_output(trace);
     if (!out)
         return;
     for (size_t i = 0; i < depth; i++)
-        (void)fputs("  ", out);
+        trace_writer_append(out, "  ");
 }
 
 static const char *trace_vt_name(const HParserVtable *vt) {
@@ -442,39 +527,39 @@ static void trace_error_add_parser(HParseError *error, const char *name) {
 static void trace_pos(HParseState *state) {
     HInputStream *in = &state->input_stream;
     size_t abs = trace_size_add(in->pos, in->index);
-    FILE *out = in->trace ? in->trace->execution_stream : NULL;
+    HTraceWriter *out = in->trace ? trace_output(in->trace) : NULL;
     if (!out)
         return;
-    (void)fprintf(out, "@%zu", abs);
+    trace_writer_printf(out, "@%zu", abs);
     if (in->bit_offset)
-        (void)fprintf(out, ".%db", in->bit_offset);
+        trace_writer_printf(out, ".%db", in->bit_offset);
 }
 
 // print a one-line summary of the token an HParseResult carries
-static void trace_token(FILE *out, const HParsedToken *tok) {
+static void trace_token(HTraceWriter *out, const HParsedToken *tok) {
     if (!out)
         return;
     if (!tok) {
-        (void)fputs("(null ast)", out);
+        trace_writer_append(out, "(null ast)");
         return;
     }
     switch (tok->token_type) {
     case TT_UINT:
-        (void)fprintf(out, "UINT %" PRIu64 " (0x%02" PRIx64 ")", tok->token_data.uint,
-                      tok->token_data.uint);
+        trace_writer_printf(out, "UINT %" PRIu64 " (0x%02" PRIx64 ")", tok->token_data.uint,
+                            tok->token_data.uint);
         break;
     case TT_SINT:
-        (void)fprintf(out, "SINT %" PRId64, tok->token_data.sint);
+        trace_writer_printf(out, "SINT %" PRId64, tok->token_data.sint);
         break;
     case TT_BYTES:
-        (void)fprintf(out, "BYTES[%zu]", tok->token_data.bytes.len);
+        trace_writer_printf(out, "BYTES[%zu]", tok->token_data.bytes.len);
         break;
     case TT_SEQUENCE:
-        (void)fprintf(out, "SEQUENCE[%zu children]",
-                      tok->token_data.seq ? tok->token_data.seq->used : (size_t)0);
+        trace_writer_printf(out, "SEQUENCE[%zu children]",
+                            tok->token_data.seq ? tok->token_data.seq->used : (size_t)0);
         break;
     default:
-        (void)fputs(trace_tt_name(tok->token_type), out);
+        trace_writer_append(out, trace_tt_name(tok->token_type));
         break;
     }
 }
@@ -592,6 +677,24 @@ static void trace_print_source(FILE *stream, const HParser *parser) {
     (void)fputs("]", stream);
 }
 
+static void trace_writer_print_source(HTraceWriter *writer, const HParser *parser) {
+    if (!writer || !parser || !parser->diagnostic_source)
+        return;
+
+    const HSourceLocation *source = parser->diagnostic_source;
+
+    trace_writer_append(writer, " [");
+    if (source->file_name)
+        trace_writer_printf(writer, "%s", source->file_name);
+    else
+        trace_writer_append(writer, "<unknown source>");
+    if (source->line)
+        trace_writer_printf(writer, ":%zu", source->line);
+    if (source->column)
+        trace_writer_printf(writer, ":%zu", source->column);
+    trace_writer_append(writer, "]");
+}
+
 static void trace_print_input_position(FILE *stream, size_t index, uint8_t bit_offset) {
     (void)fprintf(stream, "%zu", index);
     if (bit_offset)
@@ -605,7 +708,9 @@ void h_trace_fprint_input_trail(FILE *stream, const HTraceFrame *frames, size_t 
     (void)fputs("input trail:\n", stream);
     for (size_t i = 0; i < frame_count; i++) {
         const HTraceFrame *frame = &frames[i];
-        char *name = h_trace_parser_name(frame->parser);
+        const char *name = frame->parser && frame->parser->vtable
+                               ? trace_parser_diagnostic_name(frame->parser)
+                               : frame->name;
 
         (void)fprintf(stream, "  -> %-20s entered at index ", name ? name : frame->name);
         trace_print_input_position(stream, frame->start, frame->start_bit);
@@ -613,7 +718,6 @@ void h_trace_fprint_input_trail(FILE *stream, const HTraceFrame *frames, size_t 
         trace_print_input_position(stream, frame->reached, frame->reached_bit);
         trace_print_source(stream, frame->parser);
         (void)fputc('\n', stream);
-        free(name);
     }
 }
 
@@ -629,25 +733,25 @@ void h_trace_begin(HTraceState *trace, const uint8_t *input, size_t input_len) {
     context->choice_root = H_TRACE_CHOICE_NONE;
     context->parent = trace->context;
     trace->context = context;
-    if (trace->execution_stream)
-        (void)fprintf(trace->execution_stream,
-                      "\n=== h_packrat_parse: begin (%zu bytes of input) ===\n", input_len);
+    HTraceWriter *out = trace_output(trace);
+    if (out)
+        trace_writer_printf(out, "\n=== h_packrat_parse: begin (%zu bytes of input) ===\n",
+                            input_len);
 }
 
 void h_trace_enter(const HParser *parser, HParseState *state) {
     HTraceState *trace = state->input_stream.trace;
     if (!trace)
         return;
-    if (trace->execution_stream) {
-        FILE *out = trace->execution_stream;
-        char *parser_name = h_trace_parser_name(parser);
+    HTraceWriter *out = trace_output(trace);
+    if (out) {
+        const char *parser_name = trace_parser_diagnostic_name(parser);
         trace_indent(trace);
-        (void)fprintf(out, "-> %-20s %-9s ", parser_name ? parser_name : "?(no parser)",
-                      parser->vtable->higher ? "higher" : "primitive");
+        trace_writer_printf(out, "-> %-20s %-9s ", parser_name,
+                            parser->vtable->higher ? "higher" : "primitive");
         trace_pos(state);
-        trace_print_source(out, parser);
-        (void)fputc('\n', out);
-        free(parser_name);
+        trace_writer_print_source(out, parser);
+        trace_writer_putc(out, '\n');
     }
     if (trace->context && !trace->context->root_parser)
         trace->context->root_parser = parser;
@@ -1337,20 +1441,20 @@ void h_trace_exit(const HParser *parser, HParseState *state, HParseResult *res, 
         if (originated_here)
             trace_record_failure(parser, state, &frame);
     }
-    if (!trace->execution_stream)
+    HTraceWriter *out = trace_output(trace);
+    if (!out)
         return;
-    FILE *out = trace->execution_stream;
     trace_indent(trace);
     if (res) {
-        (void)fputs("<= OK   ast=", out);
+        trace_writer_append(out, "<= OK   ast=");
         trace_token(out, res->ast);
-        (void)fprintf(out, " (%" PRId64 " bits)", res->bit_length);
+        trace_writer_printf(out, " (%" PRId64 " bits)", res->bit_length);
     } else {
-        (void)fputs("<= FAIL", out);
+        trace_writer_append(out, "<= FAIL");
     }
     if (note)
-        (void)fprintf(out, "  [%s]", note);
-    (void)fputc('\n', out);
+        trace_writer_printf(out, "  [%s]", note);
+    trace_writer_putc(out, '\n');
 }
 
 void h_trace_end(HParseResult *res, HParseState *state) {
@@ -1359,11 +1463,12 @@ void h_trace_end(HParseResult *res, HParseState *state) {
     if (!context)
         return;
 
-    if (trace->execution_stream)
-        (void)fprintf(trace->execution_stream, "=== h_packrat_parse: end (%s) ===\n",
-                      res ? "SUCCESS" : "FAILURE");
+    HTraceWriter *out = trace_output(trace);
+    if (out)
+        trace_writer_printf(out, "=== h_packrat_parse: end (%s) ===\n",
+                            res ? "SUCCESS" : "FAILURE");
 
-    trace_complete(trace, context);
+    trace_complete(&trace->completed, context);
 
     HTraceContext *parent = context->parent;
     trace->context = parent;
@@ -1376,86 +1481,88 @@ const char *rvm_op_names[RVM_OPCOUNT] = {"ACCEPT",  "GOTO", "FORK",  "PUSH", "AC
 const char *svm_op_names[SVM_OPCOUNT] = {"PUSH", "NOP", "ACTION", "CAPTURE", "ACCEPT"};
 
 void dump_rvm_prog(HTraceState *trace_state, HRVMProg *prog) {
-    FILE *out = trace_state ? trace_state->execution_stream : NULL;
+    HTraceWriter *out = trace_output(trace_state);
     if (!out)
         return;
     for (unsigned int i = 0; i < prog->length; i++) {
         HRVMInsn *insn = &prog->insns[i];
-        (void)fprintf(out, "%4d %-10s", i, rvm_op_names[insn->op]);
+        trace_writer_printf(out, "%4d %-10s", i, rvm_op_names[insn->op]);
         const HParser *display_parser =
             h_diagnostic_context_parser(prog->insn_contexts[i], prog->insn_parsers[i]);
-        char *parser_name = h_trace_parser_name(display_parser);
+        const char *parser_name =
+            display_parser && display_parser->vtable ? trace_parser_diagnostic_name(display_parser)
+                                                      : NULL;
         switch (insn->op) {
         case RVM_PUSH:
             if (parser_name) {
-                (void)fprintf(out, " parser=%s", parser_name);
+                trace_writer_printf(out, " parser=%s", parser_name);
             }
-            trace_print_source(out, display_parser);
+            trace_writer_print_source(out, display_parser);
             break;
         case RVM_GOTO:
         case RVM_FORK:
-            (void)fprintf(out, "%hd", insn->arg);
+            trace_writer_printf(out, "%hd", insn->arg);
             break;
         case RVM_ACTION:
             if (parser_name) {
-                (void)fprintf(out, " parser=%s", parser_name);
+                trace_writer_printf(out, " parser=%s", parser_name);
             }
-            trace_print_source(out, display_parser);
+            trace_writer_print_source(out, display_parser);
             break;
         case RVM_MATCH: {
             uint8_t low, high;
             low = (uint8_t)(insn->arg & 0xff);
             high = (uint8_t)((insn->arg >> 8) & 0xff);
             if (high < low)
-                (void)fprintf(out, "NONE");
+                trace_writer_append(out, "NONE");
             else {
                 if (low >= 0x20 && low <= 0x7e)
-                    (void)fprintf(out, "%02hhx ('%c')", low, low);
+                    trace_writer_printf(out, "%02hhx ('%c')", low, low);
                 else
-                    (void)fprintf(out, "%02hhx", low);
+                    trace_writer_printf(out, "%02hhx", low);
 
                 if (high >= 0x20 && high <= 0x7e)
-                    (void)fprintf(out, " - %02hhx ('%c')", high, high);
+                    trace_writer_printf(out, " - %02hhx ('%c')", high, high);
                 else
-                    (void)fprintf(out, " - %02hhx", high);
+                    trace_writer_printf(out, " - %02hhx", high);
             }
             break;
         }
         default:
             break;
         }
-        free(parser_name);
-        (void)fprintf(out, "\n");
+        trace_writer_putc(out, '\n');
     }
 }
 
 void dump_svm_prog(HTraceState *trace_state, HRVMProg *prog, HRVMTrace *trace) {
     (void)prog;
-    FILE *out = trace_state ? trace_state->execution_stream : NULL;
+    HTraceWriter *out = trace_output(trace_state);
     if (!out)
         return;
     for (; trace != NULL; trace = trace->next) {
-        (void)fprintf(out, "@%04zd %-10s", trace->input_pos, svm_op_names[trace->opcode]);
+        trace_writer_printf(out, "@%04zd %-10s", trace->input_pos, svm_op_names[trace->opcode]);
 
         const HParser *display_parser =
             h_diagnostic_context_parser(trace->diagnostic_context, trace->parser);
-        char *parser_name = h_trace_parser_name(display_parser);
+        const char *parser_name =
+            display_parser && display_parser->vtable ? trace_parser_diagnostic_name(display_parser)
+                                                      : NULL;
         if (parser_name) {
-            (void)fprintf(out, " parser=%s", parser_name);
-            free(parser_name);
+            trace_writer_printf(out, " parser=%s", parser_name);
         }
-        trace_print_source(out, display_parser);
-        (void)fprintf(out, "\n");
+        trace_writer_print_source(out, display_parser);
+        trace_writer_putc(out, '\n');
     }
 }
 
-static void trace_fprint_byte(FILE *stream, uint8_t c) {
+static void trace_fprint_byte(HTraceWriter *stream, uint8_t c) {
     if (c == '\'' || c == '\\')
-        (void)fprintf(stream, "'\\%c'", c);
+        trace_writer_printf(stream, "'\\%c'", c);
     else if (isprint(c))
-        (void)fprintf(stream, "'%c'", c);
+        trace_writer_printf(stream, "'%c'", c);
     else
-        (void)fprintf(stream, "0x%02x", c);
+        trace_writer_printf(stream, "0x%02x", c);
 }
 
 static void trace_fprint_choice_indent(FILE *stream, size_t depth) {
@@ -1541,7 +1648,7 @@ void rvm_match_error(HTraceState *trace_state, HRVMProg *prog, const uint8_t *in
     h_backend_trace_begin(trace_state, PB_REGULAR,
                           prog->root_parser ? prog->root_parser : candidates[0].parser, input,
                           input_len);
-    if (trace_state->execution_stream)
+    if (trace_output(trace_state))
         dump_rvm_prog(trace_state, prog);
     trace_observe_svm_trace(trace_state->context, trace);
     h_backend_trace_failures(trace_state, candidates, candidate_count);
@@ -1556,7 +1663,7 @@ void svm_action_error(HSVMContext *ctx, HRVMProg *orig_prog, HRVMTrace *trace, c
     h_backend_trace_begin(trace_state, PB_REGULAR,
                           orig_prog->root_parser ? orig_prog->root_parser : ctx->parser, input,
                           input_len);
-    if (trace_state->execution_stream)
+    if (trace_output(trace_state))
         dump_svm_prog(trace_state, orig_prog, trace);
     trace_observe_svm_trace(trace_state->context, trace);
     h_backend_trace_failure(trace_state, ctx->input_pos, ctx->input_pos, H_PARSE_ERROR_ACTION,
@@ -1572,7 +1679,7 @@ void svm_failure_error(HSVMContext *ctx, HRVMProg *orig_prog, HRVMTrace *trace,
     h_backend_trace_begin(trace_state, PB_REGULAR,
                           orig_prog->root_parser ? orig_prog->root_parser : ctx->parser, input,
                           input_len);
-    if (trace_state->execution_stream)
+    if (trace_output(trace_state))
         dump_svm_prog(trace_state, orig_prog, trace);
     trace_observe_svm_trace(trace_state->context, trace);
     if (ctx->failure.kind == SVM_FAILURE_INT_RANGE) {
@@ -1657,9 +1764,10 @@ void h_backend_trace_begin(HTraceState *trace, HParserBackend backend, const HPa
     context->parent = trace->context;
     trace->context = context;
 
-    if (trace->execution_stream)
-        (void)fprintf(trace->execution_stream, "\n=== %s: begin (%zu bytes of input) ===\n",
-                      trace_backend_name(backend), input_len);
+    HTraceWriter *out = trace_output(trace);
+    if (out)
+        trace_writer_printf(out, "\n=== %s: begin (%zu bytes of input) ===\n",
+                            trace_backend_name(backend), input_len);
 }
 
 void h_cf_trace_begin(HTraceState *trace, HParserBackend backend, const HParser *parser,
@@ -2065,15 +2173,15 @@ void h_cf_trace_parser_enter(HTraceState *trace, const HParser *parser, size_t i
 
     HTraceContext *context = trace->context;
     const HParser *origin = parser ? parser : context->root_parser;
-    if (trace->execution_stream) {
-        FILE *out = trace->execution_stream;
-        char *name = h_trace_parser_name(origin);
+    HTraceWriter *out = trace_output(trace);
+    if (out) {
+        const char *name =
+            origin && origin->vtable ? trace_parser_diagnostic_name(origin) : "?(no parser)";
         trace_indent(trace);
-        (void)fprintf(out, "-> %-20s %-11s @%zu", name ? name : "?(no parser)",
-                      role ? role : "nonterminal", index);
-        trace_print_source(out, origin);
-        (void)fputc('\n', out);
-        free(name);
+        trace_writer_printf(out, "-> %-20s %-11s @%zu", name, role ? role : "nonterminal",
+                            index);
+        trace_writer_print_source(out, origin);
+        trace_writer_putc(out, '\n');
     }
 
     if (context->frame_count < H_TRACE_MAX_FRAMES) {
@@ -2103,35 +2211,34 @@ void h_cf_trace_parser_exit(HTraceState *trace, const HParser *parser, size_t st
     else if (context->frame_count > 0)
         context->frame_count--;
 
-    if (trace->execution_stream) {
-        FILE *out = trace->execution_stream;
+    HTraceWriter *out = trace_output(trace);
+    if (out) {
         trace_indent(trace);
         if (success) {
-            (void)fputs("<= OK   ast=", out);
+            trace_writer_append(out, "<= OK   ast=");
             trace_token(out, token);
-            (void)fprintf(out, " span=[%zu,%zu)", start, end);
+            trace_writer_printf(out, " span=[%zu,%zu)", start, end);
         } else {
-            (void)fputs("<= FAIL", out);
-            (void)fprintf(out, " @%zu", end);
+            trace_writer_append(out, "<= FAIL");
+            trace_writer_printf(out, " @%zu", end);
         }
         if (role)
-            (void)fprintf(out, "  [%s]", role);
+            trace_writer_printf(out, "  [%s]", role);
 
-        trace_print_source(out, parser);
-        (void)fputc('\n', out);
+        trace_writer_print_source(out, parser);
+        trace_writer_putc(out, '\n');
     }
 }
 
-static void trace_lr_branch(const HTraceState *trace, size_t branch) {
+static void trace_lr_branch(HTraceState *trace, size_t branch) {
     if (trace && trace->context && trace->context->backend == PB_GLR)
-        (void)fprintf(trace->execution_stream, "[branch %zu] ", branch);
+        trace_writer_printf(trace_output(trace), "[branch %zu] ", branch);
 }
 
 static void trace_lr_parser(HTraceState *trace, const HParser *parser) {
-    char *name = h_trace_parser_name(parser);
-    if (name) {
-        (void)fprintf(trace->execution_stream, " parser=%s", name);
-        free(name);
+    if (parser && parser->vtable) {
+        trace_writer_printf(trace_output(trace), " parser=%s",
+                            trace_parser_diagnostic_name(parser));
     }
 }
 
@@ -2142,21 +2249,21 @@ void h_cf_trace_lr_shift(HTraceState *trace, size_t branch, size_t from_state, s
         return;
 
     trace_observe_provenance(trace->context, provenance, parser, index);
-    if (!trace->execution_stream)
+    HTraceWriter *out = trace_output(trace);
+    if (!out)
         return;
 
-    FILE *out = trace->execution_stream;
-    (void)fprintf(out, "@%04zu ", index);
+    trace_writer_printf(out, "@%04zu ", index);
     trace_lr_branch(trace, branch);
-    (void)fprintf(out, "SHIFT  s%zu -> s%zu", from_state, to_state);
+    trace_writer_printf(out, "SHIFT  s%zu -> s%zu", from_state, to_state);
     if (token && token->token_type == TT_UINT) {
-        (void)fputs(" input=", out);
+        trace_writer_append(out, " input=");
         trace_fprint_byte(out, (uint8_t)token->token_data.uint);
     } else {
-        (void)fputs(" input=end-of-input", out);
+        trace_writer_append(out, " input=end-of-input");
     }
     trace_lr_parser(trace, parser);
-    (void)fputc('\n', out);
+    trace_writer_putc(out, '\n');
 }
 
 void h_cf_trace_lr_reduce(HTraceState *trace, size_t branch, size_t from_state, size_t to_state,
@@ -2164,62 +2271,62 @@ void h_cf_trace_lr_reduce(HTraceState *trace, size_t branch, size_t from_state, 
                           const HDiagnosticContext *provenance, const HParsedToken *token,
                           bool success) {
     (void)provenance;
-    if (!trace || !trace->execution_stream || !trace->context)
+    HTraceWriter *out = trace_output(trace);
+    if (!trace || !out || !trace->context)
         return;
 
-    FILE *out = trace->execution_stream;
-    (void)fprintf(out, "@%04zu ", end);
+    trace_writer_printf(out, "@%04zu ", end);
     trace_lr_branch(trace, branch);
     if (!success) {
-        (void)fprintf(out, "REJECT  s%zu len=%zu span=[%zu,%zu)", from_state, length, start,
-                      end);
+        trace_writer_printf(out, "REJECT  s%zu len=%zu span=[%zu,%zu)", from_state, length, start,
+                            end);
     } else if (to_state == SIZE_MAX) {
-        (void)fprintf(out, "REDUCE  s%zu -> accept len=%zu span=[%zu,%zu)", from_state,
-                      length, start, end);
+        trace_writer_printf(out, "REDUCE  s%zu -> accept len=%zu span=[%zu,%zu)", from_state,
+                            length, start, end);
     } else {
-        (void)fprintf(out, "REDUCE  s%zu -> s%zu len=%zu span=[%zu,%zu)", from_state, to_state,
-                      length, start, end);
+        trace_writer_printf(out, "REDUCE  s%zu -> s%zu len=%zu span=[%zu,%zu)", from_state,
+                            to_state, length, start, end);
     }
     trace_lr_parser(trace, parser);
     if (success) {
-        (void)fputs(" ast=", out);
+        trace_writer_append(out, " ast=");
         trace_token(out, token);
     }
-    (void)fputc('\n', out);
+    trace_writer_putc(out, '\n');
 }
 
 void h_cf_trace_lr_error(HTraceState *trace, size_t branch, size_t state, size_t index,
                          const HParser *parser, const HDiagnosticContext *provenance) {
     (void)provenance;
-    if (!trace || !trace->execution_stream || !trace->context)
+    HTraceWriter *out = trace_output(trace);
+    if (!trace || !out || !trace->context)
         return;
 
-    FILE *out = trace->execution_stream;
-    (void)fprintf(out, "@%04zu ", index);
+    trace_writer_printf(out, "@%04zu ", index);
     trace_lr_branch(trace, branch);
-    (void)fprintf(out, "ERROR  no action in s%zu", state);
+    trace_writer_printf(out, "ERROR  no action in s%zu", state);
     trace_lr_parser(trace, parser);
-    (void)fputc('\n', out);
+    trace_writer_putc(out, '\n');
 }
 
 size_t h_cf_trace_glr_fork(HTraceState *trace, size_t branch, size_t state, size_t index) {
-    if (!trace || !trace->execution_stream || !trace->context)
+    HTraceWriter *out = trace_output(trace);
+    if (!trace || !out || !trace->context)
         return branch;
 
     size_t child = ++trace->context->next_branch_id;
-    (void)fprintf(trace->execution_stream,
-                  "@%04zu [branch %zu] FORK -> branch %zu at s%zu\n", index, branch, child,
-                  state);
+    trace_writer_printf(out, "@%04zu [branch %zu] FORK -> branch %zu at s%zu\n", index, branch,
+                        child, state);
     return child;
 }
 
 void h_cf_trace_glr_merge(HTraceState *trace, size_t survivor, size_t merged, size_t state,
                           size_t index) {
-    if (!trace || !trace->execution_stream || !trace->context)
+    HTraceWriter *out = trace_output(trace);
+    if (!trace || !out || !trace->context)
         return;
-    (void)fprintf(trace->execution_stream,
-                  "@%04zu [branch %zu] MERGE branch %zu at s%zu\n", index, survivor, merged,
-                  state);
+    trace_writer_printf(out, "@%04zu [branch %zu] MERGE branch %zu at s%zu\n", index, survivor,
+                        merged, state);
 }
 
 void h_backend_trace_end(HTraceState *trace, bool success) {
@@ -2227,8 +2334,8 @@ void h_backend_trace_end(HTraceState *trace, bool success) {
     if (!context)
         return;
 
-    if (trace->execution_stream) {
-        FILE *out = trace->execution_stream;
+    HTraceWriter *out = trace_output(trace);
+    if (out) {
         while (context->overflow_frames > 0) {
             if (context->depth > 0)
                 context->depth--;
@@ -2240,16 +2347,16 @@ void h_backend_trace_end(HTraceState *trace, bool success) {
             if (context->depth > 0)
                 context->depth--;
             trace_indent(trace);
-            char *name = frame->parser ? h_trace_parser_name(frame->parser) : NULL;
-            (void)fprintf(out, "<= FAIL  [aborted %s from @%zu]\n",
-                          name ? name : frame->name, frame->start);
-            free(name);
+            const char *name = frame->parser && frame->parser->vtable
+                                   ? trace_parser_diagnostic_name(frame->parser)
+                                   : frame->name;
+            trace_writer_printf(out, "<= FAIL  [aborted %s from @%zu]\n", name, frame->start);
         }
-        (void)fprintf(out, "=== %s: end (%s) ===\n", trace_backend_name(context->backend),
-                      success ? "SUCCESS" : "FAILURE");
+        trace_writer_printf(out, "=== %s: end (%s) ===\n", trace_backend_name(context->backend),
+                            success ? "SUCCESS" : "FAILURE");
     }
 
-    trace_complete(trace, context);
+    trace_complete(&trace->completed, context);
 
     HTraceContext *parent = context->parent;
     trace->context = parent;
