@@ -493,7 +493,7 @@ bool h_hashset_equal(const HHashSet *a, const HHashSet *b);
 
 bool h_eq_ptr(const void *p, const void *q);
 HHashValue h_hash_ptr(const void *p);
-uint32_t h_djbhash(const uint8_t *buf, size_t len);
+HHashValue h_hash_bytes(const uint8_t *buf, size_t len);
 
 void h_symbol_put(HParseState *state, const char *key, void *value);
 void *h_symbol_get(HParseState *state, const char *key);

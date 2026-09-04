@@ -1275,7 +1275,9 @@ HParser *h_with_endianness__m(HAllocator *mm__, char endianness, const HParser *
  * parse failure)
  *
  * @param p Parser whose result to stash
- * @param name Name to stash the result under (must be unique)
+ * @param name NUL-terminated name to stash the result under (must be unique).
+ * Names are compared by string contents; the caller owns this string and must
+ * keep it valid and unchanged while the parser exists.
  * @return Result token type: p's token type if name was not already in the symbol table.
  */
 HParser *h_put_value(const HParser *p, const char *name);
@@ -1285,7 +1287,9 @@ HParser *h_put_value__m(HAllocator *mm__, const HParser *p, const char *name);
  * @brief The 'h_get_value' combinator retrieves a named HParseResult that was previously stashed in
  * the parse state.
  *
- * @param name Name to retrieve
+ * @param name NUL-terminated name to retrieve. Names are compared by string
+ * contents; the caller owns this string and must keep it valid and unchanged
+ * while the parser exists.
  * @return Result token type: whatever the stashed HParseResult is, if present. If absent, NULL (and
  * thus parse failure).
  */
@@ -1305,7 +1309,9 @@ void h_pprint_ast_indexed(FILE *stream, const HParsedToken *token, size_t indent
  * @brief The 'h_free_value' combinator retrieves a named HParseResult that was previously stashed
  * in the parse state and deletes it from the symbol table
  *
- * @param name Name to retrieve and delete
+ * @param name NUL-terminated name to retrieve and delete. Names are compared
+ * by string contents; the caller owns this string and must keep it valid and
+ * unchanged while the parser exists.
  * @return Result token type: whatever the stashed HParseResult is, if present. If absent, NULL (and
  * thus parse failure).
  */
