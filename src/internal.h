@@ -416,6 +416,8 @@ static inline HParserBackendVTable *h_get_missing_backend_vtable__int(void) {
 
 int h_copy_numeric_param(HAllocator *mm__, void **out, void *in);
 
+void h_parser_graph_track(HParser *parser);
+
 static inline HParser *h_new_parser_with_free(HAllocator *mm__, const HParserVtable *vt, void *env,
                                               HParserEnvFree free_env) {
     HParser *p = h_new(HParser, 1);
@@ -427,6 +429,7 @@ static inline HParser *h_new_parser_with_free(HAllocator *mm__, const HParserVta
     p->backend = h_get_default_backend__int();
     p->backend_vtable = h_get_default_backend_vtable__int();
     p->owner_mm__ = mm__;
+    h_parser_graph_track(p);
 
     return p;
 }

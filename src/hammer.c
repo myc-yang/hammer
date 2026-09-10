@@ -30,6 +30,7 @@
 #include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 static HParserBackendVTable *backends[PB_MAX + 1] = {
@@ -40,6 +41,8 @@ static HParserBackendVTable *backends[PB_MAX + 1] = {
     &h__lalr_backend_vtable,    /* For PB_LALR */
     &h__glr_backend_vtable      /* For PB_GLR */
 };
+
+static void h_parser_graph_untrack(HParser *parser);
 
 /* Helper function, since these lines appear in every parser */
 
@@ -1070,6 +1073,7 @@ void h_parser_free__m(HAllocator *mm__, HParser *parser) {
     if (parser == NULL || mm__ == NULL) {
         return;
     }
+    h_parser_graph_untrack(parser);
     if (parser->backend_vtable != NULL && parser->backend_vtable->free != NULL) {
         parser->backend_vtable->free(parser);
     }
@@ -1085,6 +1089,104 @@ void h_parser_free__m(HAllocator *mm__, HParser *parser) {
     }
     h_desugar_context_release(parser->desugar_ctx);
     mm__->free(mm__, parser);
+}
+
+struct HParserGraph_ {
+    HParser **parsers;
+    size_t count;
+    size_t capacity;
+    HParserGraph *previous;
+    HParserGraph *next;
+};
+
+/*
+ * Parser factories may be called concurrently, so graph collection is scoped
+ * to the constructing thread. GCC and Clang support __thread in C99 mode.
+ */
+static __thread HParserGraph *active_parser_graph;
+static __thread HParserGraph *parser_graphs;
+
+HParserGraph *h_parser_graph_begin(void) {
+    HParserGraph *graph = calloc(1, sizeof(*graph));
+    if (graph == NULL)
+        return NULL;
+
+    graph->previous = active_parser_graph;
+    active_parser_graph = graph;
+    graph->next = parser_graphs;
+    parser_graphs = graph;
+    return graph;
+}
+
+void h_parser_graph_end(HParserGraph *graph) {
+    if (graph == NULL)
+        return;
+
+    HParserGraph **link = &active_parser_graph;
+    while (*link && *link != graph)
+        link = &(*link)->previous;
+
+    if (*link == graph) {
+        *link = graph->previous;
+        graph->previous = NULL;
+    }
+}
+
+void h_parser_graph_track(HParser *parser) {
+    HParserGraph *graph = active_parser_graph;
+    if (graph == NULL || parser == NULL)
+        return;
+
+    if (graph->count == graph->capacity) {
+        const size_t capacity = graph->capacity == 0 ? 16 : graph->capacity * 2;
+
+        // Never continue without room to record a node; an untracked node
+        // would defeat the graph's complete-destruction guarantee.
+        if (capacity < graph->capacity || capacity > SIZE_MAX / sizeof(*graph->parsers))
+            abort();
+
+        HParser **parsers =
+            (HParser **)realloc((void *)graph->parsers, capacity * sizeof(*graph->parsers));
+        if (parsers == NULL)
+            abort();
+
+        graph->parsers = parsers;
+        graph->capacity = capacity;
+    }
+
+    graph->parsers[graph->count++] = parser;
+}
+
+static void h_parser_graph_untrack(HParser *parser) {
+    for (HParserGraph *graph = parser_graphs; graph != NULL; graph = graph->next) {
+        for (size_t i = 0; i < graph->count; ++i) {
+            if (graph->parsers[i] == parser) {
+                graph->parsers[i] = NULL;
+                return;
+            }
+        }
+    }
+}
+
+void h_parser_graph_free(HParserGraph *graph) {
+    if (graph == NULL)
+        return;
+
+    h_parser_graph_end(graph);
+    while (graph->count > 0) {
+        HParser *parser = graph->parsers[--graph->count];
+        if (parser != NULL)
+            h_parser_free__m(parser->owner_mm__, parser);
+    }
+
+    HParserGraph **link = &parser_graphs;
+    while (*link != NULL && *link != graph)
+        link = &(*link)->next;
+    if (*link == graph)
+        *link = graph->next;
+
+    free((void *)graph->parsers);
+    free(graph);
 }
 
 static bool h_parser_set_diagnostic_text(HParser *parser, char **field, const char *text) {
