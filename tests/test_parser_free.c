@@ -186,9 +186,9 @@ static void test_lalr_desugaring_context_is_freed(void) {
     HParser *d = h_ch('d');
     HParser *choice = h_choice(b, c, NULL);
     HParser *sequence = h_sequence(a, choice, d, NULL);
-    //HParseResult *res = h_parse(sequence, NULL, 0);
+    // HParseResult *res = h_parse(sequence, NULL, 0);
     g_assert_cmpint(h_compile(sequence, PB_LALR, NULL), ==, 0);
-    //g_assert_nonnull(sequence->desugar_ctx);
+    // g_assert_nonnull(sequence->desugar_ctx);
 
     h_parser_free(sequence);
     h_parser_free(choice);
@@ -520,16 +520,17 @@ void register_parser_free_tests(void) {
                     test_lalr_desugaring_context_is_freed);
     g_test_add_func("/core/parser/free/lalr_desugaring_context_child_first",
                     test_lalr_desugaring_context_survives_child_frees);
-    g_test_add_func("/core/parser/free/lalr_conflict_table",
-                    test_lalr_conflict_frees_table);
+    g_test_add_func("/core/parser/free/lalr_conflict_table", test_lalr_conflict_frees_table);
     g_test_add_func("/core/parser/free/lalr_independently_desugared_child",
                     test_lalr_parent_retains_independently_desugared_child);
     g_test_add_func("/core/parser/free/llk_terminal_start", test_llk_terminal_start_is_freed);
     g_test_add_func("/core/parser/free/contextfree_child_env",
                     test_contextfree_parent_survives_freed_child_env);
-    g_test_add_func("/core/parser/free/regex_child_env", test_regex_parent_survives_freed_child_env);
+    g_test_add_func("/core/parser/free/regex_child_env",
+                    test_regex_parent_survives_freed_child_env);
     g_test_add_func("/core/parser/free/graph/complete", test_parser_graph_frees_complete_graph);
-    g_test_add_func("/core/parser/free/graph/ends_collection", test_parser_graph_free_ends_collection);
+    g_test_add_func("/core/parser/free/graph/ends_collection",
+                    test_parser_graph_free_ends_collection);
     g_test_add_func("/core/parser/free/graph/shared_and_owned",
                     test_parser_graph_handles_shared_and_owned_nodes);
     g_test_add_func("/core/parser/free/graph/nested", test_parser_graph_nested_lifetimes);

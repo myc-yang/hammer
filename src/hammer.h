@@ -1666,8 +1666,6 @@ static inline HParser *h_with_context_at(HParser *parser, const char *label, con
     return h_with_context(parser, label, &source);
 }
 
-
-
 #if defined(__has_builtin)
 #if __has_builtin(__builtin_COLUMN)
 #define H_CONTEXT_COLUMN() __builtin_COLUMN()
