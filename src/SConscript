@@ -190,7 +190,8 @@ env.Append(CPPPATH=[Dir("#").abspath, src_dir])
 env.Install("$incpath", dist_headers)
 env.Install("$parsersincpath", parsers_headers)
 env.Install("$backendsincpath", backends_headers)
-env.Install("$pkgconfigpath", "../../../libhammer.pc")
+pkgconfig_install = env.Install("$pkgconfigpath", "../../../libhammer.pc")
+env.Depends(pkgconfig_install, "#libhammer.pc")
 
 if GetOption("with_tests"):
     testenv = env.Clone()
