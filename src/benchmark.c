@@ -44,6 +44,7 @@ HBenchmarkResults *h_benchmark__m(HAllocator *mm__, HParser *parser, HParserTest
 
     for (backend = PB_MIN; backend <= PB_MAX; backend++) {
         ret->results[backend].backend = backend;
+        ret->results[backend].cases = NULL;
         // Step 1: Compile grammar for given parser...
         if (h_compile(parser, backend, NULL)) {
             // backend inappropriate for grammar...
@@ -68,8 +69,8 @@ HBenchmarkResults *h_benchmark__m(HAllocator *mm__, HParser *parser, HParserTest
                 res_unamb = h_write_result_unamb(res->ast);
             } else
                 res_unamb = NULL;
-            if ((!res_unamb && tc->output_unambiguous) ||
-                (res_unamb && tc->output_unambiguous && strcmp(res_unamb, tc->output_unambiguous) != 0)) {
+            if ((res_unamb == NULL) != (tc->output_unambiguous == NULL) ||
+                (res_unamb != NULL && strcmp(res_unamb, tc->output_unambiguous) != 0)) {
                 // test case failed...
                 fprintf(stderr, "Parsing with %s failed\n", benchmark_backend_name(backend));
                 // We want to run all testcases, for purposes of generating a

@@ -1031,11 +1031,13 @@ static void test_many_internal(gconstpointer backend) {
         HParsedToken *empty_seq = h_make_seq(arena); // used=0, triggers else branch (tok = NULL)
         h_carray_append(inner_seq2->token_data.seq, empty_seq);
         h_carray_append(seq_token->token_data.seq, inner_seq1);
+        seq_token->index = 0;
         HParseResult mock_result = {.arena = arena, .ast = seq_token, .bit_length = 0};
         // Call reshape function directly to ensure coverage
         // The function pointer should point to reshape_many
         HParsedToken *reshaped = desugared_many->reshape(&mock_result, NULL);
         g_check_cmp_ptr(reshaped, !=, NULL);
+        g_check_cmp_size(reshaped->index, ==, seq_token->index);
         // Also test with a sequence that has used=3 to cover the assert(n <= 3)
         HParsedToken *seq_token2 = h_make_seq(arena);
         HParsedToken *inner_seq_with_3 = h_make_seq(arena);
@@ -1047,9 +1049,11 @@ static void test_many_internal(gconstpointer backend) {
         h_carray_append(inner_seq_with_3->token_data.seq,
                         next_seq); // element 2 (used=3, n-2=1, n-1=2)
         h_carray_append(seq_token2->token_data.seq, inner_seq_with_3);
+        seq_token2->index = 17;
         HParseResult mock_result2 = {.arena = arena, .ast = seq_token2, .bit_length = 0};
         HParsedToken *reshaped2 = desugared_many->reshape(&mock_result2, NULL);
         g_check_cmp_ptr(reshaped2, !=, NULL);
+        g_check_cmp_size(reshaped2->index, ==, seq_token2->index);
         h_delete_arena(arena);
     }
 
