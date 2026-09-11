@@ -819,8 +819,8 @@ struct HArena_ {};
     PyObject* parse(const uint8_t* input, size_t length) {
         return h_parse_python($self, input, length);
     }
-    PyObject* parse_debug(const uint8_t* input, size_t length, bool show_diagnostic=false) {
-        return h_parse_debug_python($self, input, length, show_diagnostic);
+    PyObject* parse_debug(const uint8_t* input, size_t length, bool show=false) {
+        return h_parse_debug_python($self, input, length, show);
     }
     bool compile(HParserBackend backend) {
         return h_compile($self, backend, NULL) == 0;

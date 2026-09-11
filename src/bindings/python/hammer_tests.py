@@ -778,7 +778,7 @@ class TestParseDiagnostics(unittest.TestCase):
         self.assertIsInstance(diagnostic.execution_trace, (str, type(None)))
 
     def test_diagnostic_snapshot_for_success(self):
-        result, diagnostic = h.ch(b"a").parse_debug(b"a", False)
+        result, diagnostic = h.ch(b"a").parse_debug(b"a", show=False)
 
         self.assertEqual(result, b"a")
         self.assertIsInstance(diagnostic, (h.ParseDiagnostic, type(None)))
