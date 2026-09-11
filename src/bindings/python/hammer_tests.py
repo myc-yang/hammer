@@ -696,6 +696,30 @@ class TestNewCombinators(unittest.TestCase):
         self.assertEqual(parser.parse(b"\x03z"), (3, b"z"))
         self.assertIsNone(parser.parse(b"\x01b"))
 
+    def test_dispatch_rejects_empty_entries(self):
+        with self.assertRaisesRegex(ValueError, "at least one opcode/parser entry"):
+            h.dispatch(h.uint8(), [])
+
+    def test_dispatch_rejects_malformed_entry(self):
+        with self.assertRaisesRegex(TypeError, "each dispatch entry must be an"):
+            h.dispatch(h.uint8(), [object()])
+
+    def test_dispatch_rejects_wrong_entry_length(self):
+        with self.assertRaisesRegex(ValueError, "exactly two values"):
+            h.dispatch(h.uint8(), [(1,)])
+
+    def test_dispatch_rejects_invalid_opcode(self):
+        with self.assertRaises(TypeError):
+            h.dispatch(h.uint8(), [("not an opcode", h.ch(b"a"))])
+
+    def test_dispatch_rejects_out_of_range_opcode(self):
+        with self.assertRaisesRegex(ValueError, "unsigned 32-bit integer"):
+            h.dispatch(h.uint8(), [(1 << 32, h.ch(b"a"))])
+
+    def test_dispatch_rejects_invalid_parser(self):
+        with self.assertRaisesRegex(TypeError, "each dispatch parser must be an HParser"):
+            h.dispatch(h.uint8(), [(1, object())])
+
 
 class TestDeferredActions(unittest.TestCase):
     def test_stashed_action_commits_only_on_success(self):

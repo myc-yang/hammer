@@ -155,6 +155,17 @@
 %typemap(out) HBytes* {
   $result = PyBytes_FromStringAndSize((char*)$1->token, $1->len);
  }
+/*
+ * A parser factory may return NULL after setting a Python exception. SWIG's
+ * default pointer conversion turns that NULL into None, which leaves the
+ * exception pending and makes Python raise SystemError instead of the
+ * original exception.
+ */
+%typemap(out) HParser * {
+  if ($1 == NULL && PyErr_Occurred())
+    return NULL;
+  $result = SWIG_NewPointerObj(SWIG_as_voidptr($1), SWIGTYPE_p_HParser_, 0 | 0);
+ }
 %typemap(out) struct HCountedArray_* {
   size_t i;
   $result = PyList_New($1->used);
