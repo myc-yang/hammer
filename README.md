@@ -73,13 +73,9 @@ h_compile(p, PB_GLR, NULL);        /* GLR(1), accepts table conflicts */
 
 Backend names can also be queried with `h_query_backend_by_name("regex")`, `h_query_backend_by_name("llk")`,
 `h_query_backend_by_name("lalr")`, or `h_query_backend_by_name("glr")`.
-See [docs/backends.md](docs/backends.md) for backend differences, limitations, and examples.
+For backend differences, limitations, and examples, see the [Hammer wiki](https://github.com/riversideresearch/Hammer/wiki/Parsing-Backends).
 
-To learn about hammer, check:
-
-- the [user guide](https://github.com/UpstandingHackers/hammer/wiki/User-guide)
-- [Hammer Primer](https://github.com/sergeybratus/HammerPrimer) (outdated in terms of code, but good to get the general thinking)
-- [Try Hammer](https://github.com/sboesen/TryHammer)
+To learn about Hammer, see the [Hammer wiki](https://github.com/riversideresearch/Hammer/wiki).
 
 ## Language Bindings
 
