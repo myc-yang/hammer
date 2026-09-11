@@ -1586,7 +1586,9 @@ HParserGraph *h_parser_graph_begin(void);
  * @brief Stop collecting parser nodes into a graph.
  *
  * @param graph The graph returned by h_parser_graph_begin().
- * @note Graph collection is scoped per thread and may be nested.
+ * @note Graph collection is scoped per thread and may be nested. Call this
+ *       on the construction thread before handing the graph to another
+ *       thread for destruction.
  */
 void h_parser_graph_end(HParserGraph *graph);
 
@@ -1596,7 +1598,8 @@ void h_parser_graph_end(HParserGraph *graph);
  * @param graph The graph returned by h_parser_graph_begin().
  * @note Nodes are released in reverse construction order, so parent parsers
  * are freed before their children. Shared nodes are collected once. Do not
- * free collected nodes separately.
+ * free collected nodes separately. The graph must have been ended on its
+ * construction thread before it is freed on another thread.
  */
 void h_parser_graph_free(HParserGraph *graph);
 

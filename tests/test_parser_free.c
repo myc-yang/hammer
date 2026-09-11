@@ -9,6 +9,11 @@ typedef struct {
     size_t live_allocations;
 } TrackingAllocator;
 
+typedef struct {
+    void *target;
+    size_t target_frees;
+} QuarantineAllocator;
+
 static void *tracking_alloc(HAllocator *allocator, size_t size) {
     TrackingAllocator *tracking = allocator->env;
     void *ptr = malloc(size);
@@ -38,6 +43,23 @@ static void tracking_free(HAllocator *allocator, void *ptr) {
     }
 }
 
+static void *quarantine_alloc(HAllocator *allocator, size_t size) {
+    (void)allocator;
+    return malloc(size);
+}
+
+static void *quarantine_realloc(HAllocator *allocator, void *ptr, size_t size) {
+    (void)allocator;
+    return realloc(ptr, size);
+}
+
+static void quarantine_free(HAllocator *allocator, void *ptr) {
+    QuarantineAllocator *quarantine = allocator->env;
+
+    if (ptr == quarantine->target)
+        ++quarantine->target_frees;
+}
+
 static HAllocator install_tracking_allocator(TrackingAllocator *tracking) {
     HAllocator saved = system_allocator;
 
@@ -47,6 +69,19 @@ static HAllocator install_tracking_allocator(TrackingAllocator *tracking) {
         .free = tracking_free,
         .vt = NULL,
         .env = tracking,
+    };
+    return saved;
+}
+
+static HAllocator install_quarantine_allocator(QuarantineAllocator *quarantine) {
+    HAllocator saved = system_allocator;
+
+    system_allocator = (HAllocator){
+        .alloc = quarantine_alloc,
+        .realloc = quarantine_realloc,
+        .free = quarantine_free,
+        .vt = NULL,
+        .env = quarantine,
     };
     return saved;
 }
@@ -512,6 +547,67 @@ static void test_parser_graph_grows(void) {
     system_allocator = saved;
 }
 
+static gpointer free_parser_from_worker(gpointer data) {
+    h_parser_free(data);
+    return NULL;
+}
+
+static gpointer free_graph_from_worker(gpointer data) {
+    h_parser_graph_free(data);
+    return NULL;
+}
+
+static void test_parser_graph_untracks_cross_thread_parser_free(void) {
+    QuarantineAllocator quarantine = {0};
+    HAllocator saved = install_quarantine_allocator(&quarantine);
+    HParserGraph *graph = h_parser_graph_begin();
+    g_assert_nonnull(graph);
+
+    HParser *parser = h_ch('a');
+    h_parser_graph_end(graph);
+    quarantine.target = parser;
+
+    GThread *worker = g_thread_new("parser-free", free_parser_from_worker, parser);
+    g_thread_join(worker);
+    g_assert_cmpuint(quarantine.target_frees, ==, 1);
+
+    h_parser_graph_free(graph);
+    g_assert_cmpuint(quarantine.target_frees, ==, 1);
+
+    system_allocator = saved;
+}
+
+static void test_parser_graph_foreign_free_removes_registry_entry(void) {
+    QuarantineAllocator quarantine = {0};
+    HAllocator saved = install_quarantine_allocator(&quarantine);
+    HParserGraph *graph = h_parser_graph_begin();
+    g_assert_nonnull(graph);
+    h_ch('a');
+    h_parser_graph_end(graph);
+
+    GThread *worker = g_thread_new("graph-free", free_graph_from_worker, graph);
+    GThread *duplicate_worker = g_thread_new("graph-free-duplicate", free_graph_from_worker, graph);
+    g_thread_join(worker);
+    g_thread_join(duplicate_worker);
+
+    /*
+     * These graphs are created and destroyed on the construction thread after
+     * the foreign free. The untracked parser makes registry traversal inspect
+     * the old graph if the foreign free left a stale entry behind.
+     */
+    for (unsigned i = 0; i < 2; ++i) {
+        HParserGraph *subsequent = h_parser_graph_begin();
+        g_assert_nonnull(subsequent);
+        h_parser_graph_end(subsequent);
+        h_parser_graph_free(subsequent);
+
+        HParser *untracked = h_ch((uint8_t)('b' + i));
+        h_parser_free(untracked);
+    }
+
+    system_allocator = saved;
+}
+
 void register_parser_free_tests(void) {
     g_test_add_func("/core/parser/free/sequence_variants", test_sequence_variants_free_root);
     g_test_add_func("/core/parser/free/drop_from_variants",
@@ -537,4 +633,8 @@ void register_parser_free_tests(void) {
     g_test_add_func("/core/parser/free/graph/parser_allocator",
                     test_parser_graph_uses_parser_allocator);
     g_test_add_func("/core/parser/free/graph/grows", test_parser_graph_grows);
+    g_test_add_func("/core/parser/free/graph/cross_thread_parser",
+                    test_parser_graph_untracks_cross_thread_parser_free);
+    g_test_add_func("/core/parser/free/graph/cross_thread_graph",
+                    test_parser_graph_foreign_free_removes_registry_entry);
 }

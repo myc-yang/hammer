@@ -149,6 +149,7 @@ env.MergeFlags(
 
 # Linker options
 env.MergeFlags("-lrt")
+env.Append(LIBS=["pthread"])
 
 if GetOption("coverage"):
     env.Append(CCFLAGS=["--coverage"], LDFLAGS=["--coverage"], LINKFLAGS=["--coverage"])

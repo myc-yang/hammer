@@ -29,6 +29,7 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1097,6 +1098,7 @@ struct HParserGraph_ {
     size_t capacity;
     HParserGraph *previous;
     HParserGraph *next;
+    bool claimed;
 };
 
 /*
@@ -1104,7 +1106,8 @@ struct HParserGraph_ {
  * to the constructing thread. GCC and Clang support __thread in C99 mode.
  */
 static __thread HParserGraph *active_parser_graph;
-static __thread HParserGraph *parser_graphs;
+static HParserGraph *parser_graphs;
+static pthread_mutex_t parser_graphs_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 HParserGraph *h_parser_graph_begin(void) {
     HParserGraph *graph = calloc(1, sizeof(*graph));
@@ -1113,8 +1116,11 @@ HParserGraph *h_parser_graph_begin(void) {
 
     graph->previous = active_parser_graph;
     active_parser_graph = graph;
+
+    pthread_mutex_lock(&parser_graphs_mutex);
     graph->next = parser_graphs;
     parser_graphs = graph;
+    pthread_mutex_unlock(&parser_graphs_mutex);
     return graph;
 }
 
@@ -1158,14 +1164,50 @@ void h_parser_graph_track(HParser *parser) {
 }
 
 static void h_parser_graph_untrack(HParser *parser) {
+    pthread_mutex_lock(&parser_graphs_mutex);
     for (HParserGraph *graph = parser_graphs; graph != NULL; graph = graph->next) {
         for (size_t i = 0; i < graph->count; ++i) {
             if (graph->parsers[i] == parser) {
                 graph->parsers[i] = NULL;
+                pthread_mutex_unlock(&parser_graphs_mutex);
                 return;
             }
         }
     }
+    pthread_mutex_unlock(&parser_graphs_mutex);
+}
+
+static bool h_parser_graph_claim(HParserGraph *graph) {
+    bool claimed = false;
+
+    pthread_mutex_lock(&parser_graphs_mutex);
+    HParserGraph **link = &parser_graphs;
+    while (*link != NULL && *link != graph)
+        link = &(*link)->next;
+    /*
+     * Keep a claimed graph in the registry until destruction finishes. Parser
+     * destructors may recursively free owned nodes, and those frees must still
+     * be able to untrack their entries.
+     */
+    if (*link == graph && !graph->claimed) {
+        graph->claimed = true;
+        claimed = true;
+    }
+    pthread_mutex_unlock(&parser_graphs_mutex);
+
+    return claimed;
+}
+
+static void h_parser_graph_remove(HParserGraph *graph) {
+    pthread_mutex_lock(&parser_graphs_mutex);
+    HParserGraph **link = &parser_graphs;
+    while (*link != NULL && *link != graph)
+        link = &(*link)->next;
+    if (*link == graph) {
+        *link = graph->next;
+        graph->next = NULL;
+    }
+    pthread_mutex_unlock(&parser_graphs_mutex);
 }
 
 void h_parser_graph_free(HParserGraph *graph) {
@@ -1173,18 +1215,17 @@ void h_parser_graph_free(HParserGraph *graph) {
         return;
 
     h_parser_graph_end(graph);
+    if (!h_parser_graph_claim(graph))
+        return;
+
+    /* Do not hold the registry mutex while running parser or allocator code. */
     while (graph->count > 0) {
         HParser *parser = graph->parsers[--graph->count];
         if (parser != NULL)
             h_parser_free__m(parser->owner_mm__, parser);
     }
 
-    HParserGraph **link = &parser_graphs;
-    while (*link != NULL && *link != graph)
-        link = &(*link)->next;
-    if (*link == graph)
-        *link = graph->next;
-
+    h_parser_graph_remove(graph);
     free((void *)graph->parsers);
     free(graph);
 }
