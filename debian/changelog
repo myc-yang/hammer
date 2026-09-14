@@ -1,3 +1,16 @@
+libhammer (3.3.0-1) unstable; urgency=medium
+
+  * Add thread-safe HParserGraph ownership and destruction APIs
+  * Fix h_put_value, h_get_value, and h_free_value to own and compare names
+    by string contents
+  * Improve diagnostic trace safety and performance with in-memory buffering
+  * Expose Hammer v3 parser APIs through SWIG bindings
+  * Fix packrat dispatch behavior and regenerate pkg-config metadata on version
+    changes
+  * Move backend documentation to the project wiki
+
+ -- Mahmoud Elbasiouny <melbasiouny@riversideresearch.org>  Mon, 14 Sep 2026 11:15:58 -0400
+
 libhammer (3.2.0-1) unstable; urgency=medium
 
   * Add structured, parse-scoped error diagnostics across all parser backends
