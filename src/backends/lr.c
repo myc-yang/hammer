@@ -136,6 +136,8 @@ HLRTable *h_lrtable_new(HAllocator *mm__, size_t nrows) {
 }
 
 void h_lrtable_free(HLRTable *table) {
+    if (table == NULL)
+        return;
     HAllocator *mm__ = table->mm__;
     h_delete_arena(table->arena);
     h_free(table);

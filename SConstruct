@@ -78,7 +78,8 @@ with open("VERSION", "r") as f:
 # Export version for use in sub-SConscripts
 env["VERSION"] = version
 
-env.ScanReplace("libhammer.pc.in", VERSION=version)
+pkgconfig_file = env.ScanReplace("libhammer.pc.in", VERSION=version)
+env.Depends(pkgconfig_file, "VERSION")
 
 AddOption(
     "--variant",
@@ -149,6 +150,7 @@ env.MergeFlags(
 
 # Linker options
 env.MergeFlags("-lrt")
+env.Append(LIBS=["pthread"])
 
 if GetOption("coverage"):
     env.Append(CCFLAGS=["--coverage"], LDFLAGS=["--coverage"], LINKFLAGS=["--coverage"])

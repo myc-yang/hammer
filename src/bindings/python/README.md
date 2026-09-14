@@ -81,7 +81,7 @@ method = h.token(b"GET ")
 # Parse one or more printable ASCII characters
 printable = h.many1(h.ch_range(b"\x21", b"\x7e"))
 
-# Sequence: method followed by the path
+# Sequence : method followed by the path
 request_line = h.sequence(method, printable)
 
 result = request_line.parse(b"GET /index.html")
@@ -101,6 +101,8 @@ print(result)  # (b'GET ', (b'/', b'i', b'n', ...))
 | `h.choice(*ps)`      | Try each parser in order; return first success           |
 | `h.many(p)`          | Match `p` zero or more times; return tuple               |
 | `h.many1(p)`         | Match `p` one or more times; return tuple                |
+| `h.many_cap(p, n)`   | Match `p` up to `n` times; return tuple                  |
+| `h.many1_cap(p, n)`  | Match `p` one to `n` times; return tuple                 |
 | `h.repeat_n(p, n)`   | Match `p` exactly `n` times; return tuple                |
 | `h.optional(p)`      | Match `p` or produce a `Placeholder` on failure          |
 | `h.ignore(p)`        | Match `p` but suppress its result from sequences         |
@@ -118,6 +120,9 @@ print(result)  # (b'GET ', (b'/', b'i', b'n', ...))
 | `h.action(p, fn)`    | Apply `fn` to the result of `p`                          |
 | `h.attr_bool(p, fn)` | Match `p` only if predicate `fn` returns `True`          |
 | `h.int_range(p,lo,hi)`| Match `p` only if the integer result is in `[lo, hi]`   |
+| `h.float_range(p,lo,hi)`| Match `p` only if the float result is in `[lo, hi]`    |
+| `h.bit0()` / `h.bit1()` | Match one bit with the specified value                 |
+| `h.dispatch(d, entries, default=None)` | Select a parser from `(opcode, parser)` entries |
 | `h.indirect()`       | Create a forward-declared parser for recursive grammars  |
 | `h.epsilon_p()`      | Always succeed, consuming no input                       |
 | `h.end_p()`          | Succeed only at end of input                             |
@@ -139,6 +144,16 @@ h.int32()   # signed 32-bit, big-endian
 h.int64()   # signed 64-bit, big-endian
 ```
 
+### Floating-Point Parsers
+
+```python
+h.float16()  # IEEE 754 binary16, returned as Python float
+h.float32()  # IEEE 754 binary32, returned as Python float
+h.float64()  # IEEE 754 binary64, returned as Python float
+```
+
+Use `h.float_range(parser, lower, upper)` to require an inclusive range.
+
 ### Actions and Predicates
 
 ```python
@@ -148,6 +163,31 @@ digits = h.action(h.many1(h.ch_range(b"0", b"9")),
 
 # Reject a result based on a condition
 even_byte = h.attr_bool(h.uint8(), lambda n: n % 2 == 0)
+```
+
+### Deferred Actions
+
+Use a collection to defer transformations until the enclosing parse path succeeds:
+
+```python
+actions = h.action_collection()
+stashed = h.action_stash(h.ch(b"a"), lambda value: value.upper(), actions)
+parser = h.action_apply(stashed, actions)
+
+assert parser.parse(b"a") == b"A"
+```
+
+Keep the returned parser alive while using its action collection; the binding retains the
+collection for parsers created by `action_stash()` and `action_apply()`.
+
+### Dispatch
+
+`dispatch()` accepts an iterable of `(opcode, parser)` pairs or a mapping. The discriminator must
+produce an integer token; the matching parser is selected by that value.
+
+```python
+message = h.dispatch(h.uint8(), {1: h.ch(b"a"), 2: h.ch(b"b")}, h.ch(b"z"))
+assert message.parse(b"\x01a") == (1, b"a")
 ```
 
 ### Recursive Grammars
@@ -168,9 +208,23 @@ result = expr.parse(b"abc")  # (b'a', (b'b', (b'c',)))
 - A failed parse returns `None`.
 - `h.optional()` uses `h.Placeholder()` to represent a missing optional element.
 
+### Diagnostics
+
+`parser.parse_debug(data, False)` returns `(result, diagnostic)`. `result` has the same
+shape as `parse()`. When tracing is enabled, `diagnostic` is an immutable `ParseDiagnostic` with
+an `error` (`ParseFailure`), normalized byte-range/EOF `expected` values, and an execution trace.
+It is `None` when Hammer was built without tracing support. `True` also writes Hammer's
+native diagnostic report to stderr.
+
+Use `parser.set_label(text)`, `parser.set_error_message(text)`, or
+`h.context(parser, label)` to add diagnostic metadata. `context()` captures the Python callsite
+unless explicit source fields are supplied.
+
 ## Notes
 
 - All byte-oriented parsers expect and return `bytes` objects. Pass input as `b"..."`.
 - `ch()` accepts either an integer byte value or a single-byte `bytes` object.
 - `ch_range()`, `in_()`, and `not_in()` accept `bytes` arguments only.
 - The `sequence()` and `many()` family return Python `tuple` objects.
+- Parser memory is managed by the existing binding; `h_parser_free()` is intentionally not
+  exposed because Hammer combinators borrow their child parsers.

@@ -153,7 +153,7 @@ bool h_trace_is_enabled(const HTraceState *trace);
 bool h_trace_is_dump_enabled(const HTraceState *trace);
 bool h_trace_should_print_summary(const HTraceState *trace);
 void h_trace_get_error(const HTraceState *trace, HParseError *out);
-void h_trace_get_diagnostic(const HTraceState *trace, HParseDiagnostic **out);
+void h_trace_get_diagnostic(HTraceState *trace, HParseDiagnostic **out);
 void h_trace_begin(HTraceState *trace, const uint8_t *input, size_t input_len);
 void h_trace_enter(const HParser *parser, HParseState *state);
 void h_trace_exit(const HParser *parser, HParseState *state, HParseResult *res, const char *note);

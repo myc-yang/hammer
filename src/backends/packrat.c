@@ -334,7 +334,7 @@ static uint32_t cache_key_hash(const void *key) {
     ++(packrat_hash_count);
     packrat_hash_bytes += sizeof(HParserCacheKey);
 #endif
-    return h_djbhash(key, sizeof(HParserCacheKey));
+    return h_hash_bytes(key, sizeof(HParserCacheKey));
 }
 
 static bool cache_key_equal(const void *key1, const void *key2) {
@@ -350,7 +350,7 @@ static uint32_t pos_hash(const void *key) {
     ++(packrat_hash_count);
     packrat_hash_bytes += sizeof(HInputStream);
 #endif
-    return h_djbhash(key, sizeof(HInputStream));
+    return h_hash_bytes(key, sizeof(HInputStream));
 }
 
 static bool pos_equal(const void *key1, const void *key2) {

@@ -472,23 +472,26 @@ static void test_eq_ptr(void) {
 }
 
 static void test_hash_ptr(void) {
-    void *p = (void *)0x1234;
-    HHashValue hash = h_hash_ptr(p);
-    g_check_cmp_int(hash, >=, 0);
+    HHashValue hash1 = h_hash_ptr((void *)(uintptr_t)0x1000);
+    HHashValue hash2 = h_hash_ptr((void *)(uintptr_t)0x1010);
+    HHashValue hash3 = h_hash_ptr((void *)(uintptr_t)0x1000);
+    g_check_cmp_int(hash1, !=, hash2);
+    g_check_cmp_int(hash1, ==, hash3);
 }
 
-static void test_djbhash(void) {
+static void test_hash_bytes(void) {
     const uint8_t buf[] = "test";
-    uint32_t hash = h_djbhash(buf, 4);
-
-    (void)hash;
+    const uint8_t same[] = "test";
+    const uint8_t different[] = "best";
+    g_check_cmp_int(h_hash_bytes(buf, 4), ==, h_hash_bytes(same, 4));
+    g_check_cmp_int(h_hash_bytes(buf, 4), !=, h_hash_bytes(different, 4));
 }
 
-static void test_djbhash_large(void) {
+static void test_hash_bytes_large(void) {
     const uint8_t buf[32] = "123456789012345678901234567890";
-    uint32_t hash = h_djbhash(buf, 32);
-
-    (void)hash;
+    const uint8_t different[32] = "123456789012345678901234567891";
+    g_check_cmp_int(h_hash_bytes(buf, sizeof(buf)), !=,
+                    h_hash_bytes(different, sizeof(different)));
 }
 static void test_symbol_put(void) {
     HArena *arena = h_new_arena(&system_allocator, 4096);
@@ -586,8 +589,8 @@ void register_datastructures_tests(void) {
                     test_hashtable_equal_element_not_found);
     g_test_add_func("/core/datastructures/eq_ptr", test_eq_ptr);
     g_test_add_func("/core/datastructures/hash_ptr", test_hash_ptr);
-    g_test_add_func("/core/datastructures/djbhash", test_djbhash);
-    g_test_add_func("/core/datastructures/djbhash_large", test_djbhash_large);
+    g_test_add_func("/core/datastructures/hash_bytes", test_hash_bytes);
+    g_test_add_func("/core/datastructures/hash_bytes_large", test_hash_bytes_large);
     g_test_add_func("/core/datastructures/symbol_put", test_symbol_put);
     g_test_add_func("/core/datastructures/symbol_get_null_table", test_symbol_get_null_table);
     g_test_add_func("/core/datastructures/symbol_free", test_symbol_free);

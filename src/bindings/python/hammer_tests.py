@@ -1,5 +1,7 @@
 from __future__ import absolute_import, division, print_function
 
+import os
+import tempfile
 import unittest
 
 import hammer as h
@@ -640,6 +642,166 @@ class TestRightrec(unittest.TestCase):
 
     def test_failure(self):
         pass
+
+
+class TestFloatParsers(unittest.TestCase):
+    CASES = (
+        ("float16", b"\x3e\x00", b"\x38\x00", b"\x3e", 1.5),
+        ("float32", b"\x3f\xc0\x00\x00", b"\x3f\x00\x00\x00", b"\x3f\xc0\x00", 1.5),
+        (
+            "float64",
+            b"\x3f\xf8\x00\x00\x00\x00\x00\x00",
+            b"\x3f\xe0\x00\x00\x00\x00\x00\x00",
+            b"\x3f\xf8\x00\x00\x00\x00\x00",
+            1.5,
+        ),
+    )
+
+    def test_parse_all_widths(self):
+        for constructor, encoded, _, _, expected in self.CASES:
+            with self.subTest(constructor=constructor):
+                self.assertEqual(getattr(h, constructor)().parse(encoded), expected)
+
+    def test_truncated_input_fails(self):
+        for constructor, _, _, truncated, _ in self.CASES:
+            with self.subTest(constructor=constructor):
+                self.assertIsNone(getattr(h, constructor)().parse(truncated))
+
+    def test_ranges_are_inclusive(self):
+        for constructor, encoded, below_range, _, expected in self.CASES:
+            with self.subTest(constructor=constructor):
+                parser = h.float_range(getattr(h, constructor)(), 1.5, 1.5)
+                self.assertEqual(parser.parse(encoded), expected)
+                self.assertIsNone(parser.parse(below_range))
+
+
+class TestNewCombinators(unittest.TestCase):
+    def test_bit_helpers(self):
+        self.assertEqual(h.bit0().parse(b"\x00"), 0)
+        self.assertEqual(h.bit1().parse(b"\x80"), 1)
+        self.assertIsNone(h.bit0().parse(b"\x80"))
+        self.assertIsNone(h.bit1().parse(b"\x00"))
+
+    def test_capped_repetition(self):
+        self.assertEqual(h.many_cap(h.ch(b"a"), 2).parse(b"aaa"), (b"a", b"a"))
+        self.assertEqual(h.many1_cap(h.ch(b"a"), 2).parse(b"aaa"), (b"a", b"a"))
+        self.assertIsNone(h.many1_cap(h.ch(b"a"), 2).parse(b""))
+
+    def test_dispatch_mapping_and_default(self):
+        parser = h.dispatch(
+            h.uint8(),
+            [(1, h.ch(b"a")), (2, h.ch(b"b"))],
+            h.ch(b"z"),
+        )
+        self.assertEqual(parser.parse(b"\x01a"), (1, b"a"))
+        self.assertEqual(parser.parse(b"\x02b"), (2, b"b"))
+        self.assertEqual(parser.parse(b"\x03z"), (3, b"z"))
+        self.assertIsNone(parser.parse(b"\x01b"))
+
+    def test_dispatch_rejects_empty_entries(self):
+        with self.assertRaisesRegex(ValueError, "at least one opcode/parser entry"):
+            h.dispatch(h.uint8(), [])
+
+    def test_dispatch_rejects_malformed_entry(self):
+        with self.assertRaisesRegex(TypeError, "each dispatch entry must be an"):
+            h.dispatch(h.uint8(), [object()])
+
+    def test_dispatch_rejects_wrong_entry_length(self):
+        with self.assertRaisesRegex(ValueError, "exactly two values"):
+            h.dispatch(h.uint8(), [(1,)])
+
+    def test_dispatch_rejects_invalid_opcode(self):
+        with self.assertRaises(TypeError):
+            h.dispatch(h.uint8(), [("not an opcode", h.ch(b"a"))])
+
+    def test_dispatch_rejects_out_of_range_opcode(self):
+        with self.assertRaisesRegex(ValueError, "unsigned 32-bit integer"):
+            h.dispatch(h.uint8(), [(1 << 32, h.ch(b"a"))])
+
+    def test_dispatch_rejects_invalid_parser(self):
+        with self.assertRaisesRegex(TypeError, "each dispatch parser must be an HParser"):
+            h.dispatch(h.uint8(), [(1, object())])
+
+
+class TestDeferredActions(unittest.TestCase):
+    def test_stashed_action_commits_only_on_success(self):
+        calls = []
+        collection = h.action_collection()
+        stashed = h.action_stash(
+            h.ch(b"a"),
+            lambda value: calls.append(value) or value.upper(),
+            collection,
+        )
+        parser = h.action_apply(stashed, collection)
+
+        self.assertEqual(parser.parse(b"a"), b"A")
+        self.assertEqual(calls, [b"a"])
+
+    def test_stashed_action_does_not_run_for_a_failed_parse(self):
+        calls = []
+        collection = h.action_collection()
+        stashed = h.action_stash(
+            h.ch(b"a"),
+            lambda value: calls.append(value) or value,
+            collection,
+        )
+        parser = h.action_apply(h.sequence(stashed, h.nothing_p()), collection)
+
+        self.assertIsNone(parser.parse(b"a"))
+        self.assertEqual(calls, [])
+
+
+class TestParseDiagnostics(unittest.TestCase):
+    def test_diagnostic_snapshot_for_failure(self):
+        child = h.set_label(h.ch(b"a"), "letter-a")
+        h.set_error_message(child, "expected the letter a")
+        parser = h.context(
+            child,
+            "letter-a-context",
+            file_name="grammar.py",
+            function_name="make_parser",
+            line=42,
+            column=3,
+        )
+
+        result, diagnostic = parser.parse_debug(b"b")
+
+        self.assertIsNone(result)
+        self.assertIsInstance(diagnostic, h.ParseDiagnostic)
+        self.assertEqual(diagnostic.error.index, 0)
+        self.assertEqual(diagnostic.error.actual, ord("b"))
+        self.assertEqual(diagnostic.error.parser, "letter-a-context")
+        self.assertEqual(diagnostic.error.message, "expected the letter a")
+        self.assertEqual(diagnostic.error.source, h.SourceLocation("grammar.py", "make_parser", 42, 3))
+        self.assertIn(
+            h.ParseExpectation(0, ord("a"), ord("a")),
+            diagnostic.expected,
+        )
+        self.assertIsInstance(diagnostic.execution_trace, (str, type(None)))
+
+    def test_diagnostic_snapshot_for_success(self):
+        with tempfile.TemporaryFile() as stderr:
+            saved_stderr = os.dup(2)
+            try:
+                os.dup2(stderr.fileno(), 2)
+                result, diagnostic = h.ch(b"a").parse_debug(b"a", True)
+            finally:
+                os.dup2(saved_stderr, 2)
+                os.close(saved_stderr)
+            stderr.seek(0)
+            report = stderr.read()
+
+        self.assertEqual(result, b"a")
+        self.assertIsInstance(diagnostic, (h.ParseDiagnostic, type(None)))
+        if diagnostic is not None:
+            self.assertIn(b"=== h_parse_error ===", report)
+            self.assertIn(b"parse succeeded", report)
+
+    def test_end_of_input_expectation(self):
+        result, diagnostic = h.end_p().parse_debug(b"a")
+
+        self.assertIsNone(result)
+        self.assertIn(h.ParseExpectation(1, 0, 0), diagnostic.expected)
 
 
 if __name__ == "__main__":

@@ -70,12 +70,8 @@ static void test_read_bits_signed(void) {
     g_check_cmp_int64(result, ==, -1);
 }
 
-static void test_read_bits_signed_wider_than_64(void) {
-    const uint8_t input[9] = {0x80, 0, 0, 0, 0, 0, 0, 0, 0};
-    HInputStream is = MK_INPUT_STREAM(input, sizeof(input), BIT_BIG_ENDIAN | BYTE_BIG_ENDIAN);
-    int64_t result = h_read_bits(&is, 65, true);
-    g_check_cmp_int64(result, ==, 0);
-    g_check_cmp_int(is.overrun, ==, false);
+static void test_read_bits_signed_wider_than_64(void){
+    g_assert_null(h_bits(65, true));
 }
 
 static void test_read_bits_empty_big_endian_64(void) {
