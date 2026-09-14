@@ -415,47 +415,82 @@ bool h_hashset_equal(const HHashSet *a, const HHashSet *b) {
 
 bool h_eq_ptr(const void *p, const void *q) { return (p == q); }
 
-HHashValue h_hash_ptr(const void *p) {
-    // XXX just djbhash it? it does make the benchmark ~7% slower.
-    // return h_djbhash((const uint8_t *)&p, sizeof(void *));
-    return (HHashValue)((uintptr_t)p >> 4);
+static uint64_t h_mix64(uint64_t value) {
+    value ^= value >> 30;
+    value *= UINT64_C(0xbf58476d1ce4e5b9);
+    value ^= value >> 27;
+    value *= UINT64_C(0x94d049bb133111eb);
+    return value ^ (value >> 31);
 }
 
-uint32_t h_djbhash(const uint8_t *buf, size_t len) {
-    uint32_t h = 5381;
+HHashValue h_hash_ptr(const void *p) {
+    uint64_t hash = h_mix64((uint64_t)(uintptr_t)p);
+    return (HHashValue)(hash ^ (hash >> 32));
+}
 
-    while (len >= 16) {
-        h = h * 33 + buf[0];
-        h = h * 33 + buf[1];
-        h = h * 33 + buf[2];
-        h = h * 33 + buf[3];
-        h = h * 33 + buf[4];
-        h = h * 33 + buf[5];
-        h = h * 33 + buf[6];
-        h = h * 33 + buf[7];
-        h = h * 33 + buf[8];
-        h = h * 33 + buf[9];
-        h = h * 33 + buf[10];
-        h = h * 33 + buf[11];
-        h = h * 33 + buf[12];
-        h = h * 33 + buf[13];
-        h = h * 33 + buf[14];
-        h = h * 33 + buf[15];
-        len -= 16;
-        buf += 16;
+static uint32_t h_rotate_left32(uint32_t value, unsigned int shift) {
+    return (value << shift) | (value >> (32 - shift));
+}
+
+static uint32_t h_fmix32(uint32_t value) {
+    value ^= value >> 16;
+    value *= UINT32_C(0x85ebca6b);
+    value ^= value >> 13;
+    value *= UINT32_C(0xc2b2ae35);
+    return value ^ (value >> 16);
+}
+
+HHashValue h_hash_bytes(const uint8_t *buf, size_t len) {
+    const size_t original_len = len;
+    uint32_t hash = 0;
+
+    while (len >= 4) {
+        uint32_t block = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) |
+                         ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24);
+        block *= UINT32_C(0xcc9e2d51);
+        block = h_rotate_left32(block, 15);
+        block *= UINT32_C(0x1b873593);
+        hash ^= block;
+        hash = h_rotate_left32(hash, 13);
+        hash = hash * 5 + UINT32_C(0xe6546b64);
+        buf += 4;
+        len -= 4;
     }
 
-    while (len--) {
-        h = h * 33 + *buf++;
+    uint32_t tail = 0;
+    if (len >= 3)
+        tail |= (uint32_t)buf[2] << 16;
+    if (len >= 2)
+        tail |= (uint32_t)buf[1] << 8;
+    if (len >= 1) {
+        tail |= buf[0];
+        tail *= UINT32_C(0xcc9e2d51);
+        tail = h_rotate_left32(tail, 15);
+        tail *= UINT32_C(0x1b873593);
+        hash ^= tail;
     }
 
-    return h;
+    uint64_t length = original_len;
+    hash ^= (uint32_t)length ^ (uint32_t)(length >> 32);
+    return h_fmix32(hash);
+}
+
+static bool h_eq_symbol_name(const void *key1, const void *key2) {
+    return key1 == key2 ||
+           (key1 != NULL && key2 != NULL && strcmp((const char *)key1, (const char *)key2) == 0);
+}
+
+static HHashValue h_hash_symbol_name(const void *key) {
+    if (key == NULL)
+        return 0;
+    return h_hash_bytes((const uint8_t *)key, strlen((const char *)key));
 }
 
 void h_symbol_put(HParseState *state, const char *key, void *value) {
     if (!state->symbol_table) {
         state->symbol_table = h_slist_new(state->arena);
-        h_slist_push(state->symbol_table, h_hashtable_new(state->arena, h_eq_ptr, h_hash_ptr));
+        h_slist_push(state->symbol_table,
+                     h_hashtable_new(state->arena, h_eq_symbol_name, h_hash_symbol_name));
     }
     HHashTable *head = h_slist_top(state->symbol_table);
     assert(!h_hashtable_present(head, key));

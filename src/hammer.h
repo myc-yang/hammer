@@ -1275,7 +1275,8 @@ HParser *h_with_endianness__m(HAllocator *mm__, char endianness, const HParser *
  * parse failure)
  *
  * @param p Parser whose result to stash
- * @param name Name to stash the result under (must be unique)
+ * @param name NUL-terminated name to stash the result under (must be unique).
+ * Names are compared by string contents and copied by this function.
  * @return Result token type: p's token type if name was not already in the symbol table.
  */
 HParser *h_put_value(const HParser *p, const char *name);
@@ -1285,7 +1286,8 @@ HParser *h_put_value__m(HAllocator *mm__, const HParser *p, const char *name);
  * @brief The 'h_get_value' combinator retrieves a named HParseResult that was previously stashed in
  * the parse state.
  *
- * @param name Name to retrieve
+ * @param name NUL-terminated name to retrieve. Names are compared by string
+ * contents and copied by this function.
  * @return Result token type: whatever the stashed HParseResult is, if present. If absent, NULL (and
  * thus parse failure).
  */
@@ -1305,7 +1307,8 @@ void h_pprint_ast_indexed(FILE *stream, const HParsedToken *token, size_t indent
  * @brief The 'h_free_value' combinator retrieves a named HParseResult that was previously stashed
  * in the parse state and deletes it from the symbol table
  *
- * @param name Name to retrieve and delete
+ * @param name NUL-terminated name to retrieve and delete. Names are compared
+ * by string contents and copied by this function.
  * @return Result token type: whatever the stashed HParseResult is, if present. If absent, NULL (and
  * thus parse failure).
  */
@@ -1570,6 +1573,38 @@ const char *h_get_token_type_name(HTokenType token_type);
 
 /** Make an allocator that draws from the given memory area. */
 HAllocator *h_sloballoc(void *mem, size_t size);
+
+typedef struct HParserGraph_ HParserGraph;
+
+/**
+ * @brief Begin collecting parser nodes created by combinators on this thread.
+ *
+ * @return A graph that owns subsequently created parser nodes, or NULL when
+ * allocation fails.
+ * @note Call h_parser_graph_end() before parsing with the graph's root parser.
+ */
+HParserGraph *h_parser_graph_begin(void);
+
+/**
+ * @brief Stop collecting parser nodes into a graph.
+ *
+ * @param graph The graph returned by h_parser_graph_begin().
+ * @note Graph collection is scoped per thread and may be nested. Call this
+ *       on the construction thread before handing the graph to another
+ *       thread for destruction.
+ */
+void h_parser_graph_end(HParserGraph *graph);
+
+/**
+ * @brief Free every parser node collected by a graph.
+ *
+ * @param graph The graph returned by h_parser_graph_begin().
+ * @note Nodes are released in reverse construction order, so parent parsers
+ * are freed before their children. Shared nodes are collected once. Do not
+ * free collected nodes separately. The graph must have been ended on its
+ * construction thread before it is freed on another thread.
+ */
+void h_parser_graph_free(HParserGraph *graph);
 
 /**
  * @brief Free parser p from the heap
