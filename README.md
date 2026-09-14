@@ -7,7 +7,7 @@ Hammer is written in C and provides packrat, regex/RVM, LL(k), LALR(k), and GLR 
 ## Features
 
 - **Bit-oriented** -- grammars can include single-bit flags or multi-bit constructs that span character boundaries with no hassle
-- **Thread-safe, reentrant** (for most purposes)
+- **Thread-safe, reentrant** -- each parse uses independent parse-local state. Parser graph construction is thread-local, while graph ownership and destruction tracking are synchronized across threads.
 - **Parsing backends** -- Packrat for general parser-combinator grammars, regex/RVM for regular grammars, plus LL(k), LALR(k), and GLR for context-free grammars
 - Windows and macOS installation is possible but not officially supported
 

@@ -1571,6 +1571,38 @@ const char *h_get_token_type_name(HTokenType token_type);
 /** Make an allocator that draws from the given memory area. */
 HAllocator *h_sloballoc(void *mem, size_t size);
 
+typedef struct HParserGraph_ HParserGraph;
+
+/**
+ * @brief Begin collecting parser nodes created by combinators on this thread.
+ *
+ * @return A graph that owns subsequently created parser nodes, or NULL when
+ * allocation fails.
+ * @note Call h_parser_graph_end() before parsing with the graph's root parser.
+ */
+HParserGraph *h_parser_graph_begin(void);
+
+/**
+ * @brief Stop collecting parser nodes into a graph.
+ *
+ * @param graph The graph returned by h_parser_graph_begin().
+ * @note Graph collection is scoped per thread and may be nested. Call this
+ *       on the construction thread before handing the graph to another
+ *       thread for destruction.
+ */
+void h_parser_graph_end(HParserGraph *graph);
+
+/**
+ * @brief Free every parser node collected by a graph.
+ *
+ * @param graph The graph returned by h_parser_graph_begin().
+ * @note Nodes are released in reverse construction order, so parent parsers
+ * are freed before their children. Shared nodes are collected once. Do not
+ * free collected nodes separately. The graph must have been ended on its
+ * construction thread before it is freed on another thread.
+ */
+void h_parser_graph_free(HParserGraph *graph);
+
 /**
  * @brief Free parser p from the heap
  *

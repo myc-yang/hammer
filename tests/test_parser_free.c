@@ -9,6 +9,11 @@ typedef struct {
     size_t live_allocations;
 } TrackingAllocator;
 
+typedef struct {
+    void *target;
+    size_t target_frees;
+} QuarantineAllocator;
+
 static void *tracking_alloc(HAllocator *allocator, size_t size) {
     TrackingAllocator *tracking = allocator->env;
     void *ptr = malloc(size);
@@ -38,6 +43,23 @@ static void tracking_free(HAllocator *allocator, void *ptr) {
     }
 }
 
+static void *quarantine_alloc(HAllocator *allocator, size_t size) {
+    (void)allocator;
+    return malloc(size);
+}
+
+static void *quarantine_realloc(HAllocator *allocator, void *ptr, size_t size) {
+    (void)allocator;
+    return realloc(ptr, size);
+}
+
+static void quarantine_free(HAllocator *allocator, void *ptr) {
+    QuarantineAllocator *quarantine = allocator->env;
+
+    if (ptr == quarantine->target)
+        ++quarantine->target_frees;
+}
+
 static HAllocator install_tracking_allocator(TrackingAllocator *tracking) {
     HAllocator saved = system_allocator;
 
@@ -47,6 +69,19 @@ static HAllocator install_tracking_allocator(TrackingAllocator *tracking) {
         .free = tracking_free,
         .vt = NULL,
         .env = tracking,
+    };
+    return saved;
+}
+
+static HAllocator install_quarantine_allocator(QuarantineAllocator *quarantine) {
+    HAllocator saved = system_allocator;
+
+    system_allocator = (HAllocator){
+        .alloc = quarantine_alloc,
+        .realloc = quarantine_realloc,
+        .free = quarantine_free,
+        .vt = NULL,
+        .env = quarantine,
     };
     return saved;
 }
@@ -186,9 +221,9 @@ static void test_lalr_desugaring_context_is_freed(void) {
     HParser *d = h_ch('d');
     HParser *choice = h_choice(b, c, NULL);
     HParser *sequence = h_sequence(a, choice, d, NULL);
-    //HParseResult *res = h_parse(sequence, NULL, 0);
+    // HParseResult *res = h_parse(sequence, NULL, 0);
     g_assert_cmpint(h_compile(sequence, PB_LALR, NULL), ==, 0);
-    //g_assert_nonnull(sequence->desugar_ctx);
+    // g_assert_nonnull(sequence->desugar_ctx);
 
     h_parser_free(sequence);
     h_parser_free(choice);
@@ -396,6 +431,183 @@ static void test_regex_parent_survives_freed_child_env(void) {
     system_allocator = saved;
 }
 
+static void test_parser_graph_frees_complete_graph(void) {
+    TrackingAllocator tracking = {0};
+    HAllocator saved = install_tracking_allocator(&tracking);
+    const uint8_t input[] = {'a', 'b'};
+    HParserGraph *graph = h_parser_graph_begin();
+    g_assert_nonnull(graph);
+
+    HParser *a = h_ch('a');
+    HParser *b = h_ch('b');
+    HParser *root = h_sequence(a, b, NULL);
+    h_parser_graph_end(graph);
+
+    assert_parser_parses(root, input, sizeof(input));
+    h_parser_graph_free(graph);
+    g_assert_cmpuint(tracking.live_allocations, ==, 0);
+
+    system_allocator = saved;
+}
+
+static void test_parser_graph_free_ends_collection(void) {
+    TrackingAllocator tracking = {0};
+    HAllocator saved = install_tracking_allocator(&tracking);
+    HParserGraph *graph = h_parser_graph_begin();
+    g_assert_nonnull(graph);
+
+    h_ch('a');
+    h_parser_graph_free(graph);
+
+    HParser *untracked = h_ch('b');
+    h_parser_free(untracked);
+    g_assert_cmpuint(tracking.live_allocations, ==, 0);
+
+    system_allocator = saved;
+}
+
+static void test_parser_graph_handles_shared_and_owned_nodes(void) {
+    TrackingAllocator tracking = {0};
+    HAllocator saved = install_tracking_allocator(&tracking);
+    HParserGraph *graph = h_parser_graph_begin();
+    g_assert_nonnull(graph);
+
+    HParser *shared = h_ch('a');
+    HParser *left = h_sequence(shared, h_ch('b'), NULL);
+    HParser *right = h_sequence(shared, h_ch('c'), NULL);
+    HParser *choice = h_choice(left, right, NULL);
+    HParser *sequence = h_sequence(choice, h_ch('d'), NULL);
+    HParser *rewrite = h_drop_from_(sequence, 0, -1);
+    h_parser_graph_end(graph);
+
+    h_parser_graph_free(graph);
+    g_assert_cmpuint(tracking.live_allocations, ==, 0);
+
+    system_allocator = saved;
+}
+
+static void test_parser_graph_nested_lifetimes(void) {
+    TrackingAllocator tracking = {0};
+    HAllocator saved = install_tracking_allocator(&tracking);
+    HParserGraph *outer = h_parser_graph_begin();
+    g_assert_nonnull(outer);
+    HParser *outer_parser = h_ch('a');
+
+    HParserGraph *inner = h_parser_graph_begin();
+    g_assert_nonnull(inner);
+    HParser *inner_parser = h_ch('b');
+
+    h_parser_graph_end(outer);
+    h_parser_graph_free(outer);
+    HParser *still_inner = h_ch('c');
+    h_parser_graph_end(inner);
+    h_parser_graph_free(inner);
+    g_assert_cmpuint(tracking.live_allocations, ==, 0);
+
+    (void)outer_parser;
+    (void)inner_parser;
+    (void)still_inner;
+    system_allocator = saved;
+}
+
+static void test_parser_graph_uses_parser_allocator(void) {
+    TrackingAllocator tracking = {0};
+    HAllocator allocator = {
+        .alloc = tracking_alloc,
+        .realloc = tracking_realloc,
+        .free = tracking_free,
+        .vt = NULL,
+        .env = &tracking,
+    };
+    HParserGraph *graph = h_parser_graph_begin();
+    g_assert_nonnull(graph);
+
+    HParser *a = h_ch__m(&allocator, 'a');
+    HParser *b = h_ch__m(&allocator, 'b');
+    h_sequence__m(&allocator, a, b, NULL);
+    h_parser_graph_end(graph);
+
+    h_parser_graph_free(graph);
+    g_assert_cmpuint(tracking.live_allocations, ==, 0);
+}
+
+static void test_parser_graph_grows(void) {
+    TrackingAllocator tracking = {0};
+    HAllocator saved = install_tracking_allocator(&tracking);
+    HParserGraph *graph = h_parser_graph_begin();
+    g_assert_nonnull(graph);
+
+    for (size_t i = 0; i < 33; ++i)
+        h_ch((uint8_t)i);
+    h_parser_graph_end(graph);
+
+    h_parser_graph_free(graph);
+    g_assert_cmpuint(tracking.live_allocations, ==, 0);
+
+    system_allocator = saved;
+}
+
+static gpointer free_parser_from_worker(gpointer data) {
+    h_parser_free(data);
+    return NULL;
+}
+
+static gpointer free_graph_from_worker(gpointer data) {
+    h_parser_graph_free(data);
+    return NULL;
+}
+
+static void test_parser_graph_untracks_cross_thread_parser_free(void) {
+    QuarantineAllocator quarantine = {0};
+    HAllocator saved = install_quarantine_allocator(&quarantine);
+    HParserGraph *graph = h_parser_graph_begin();
+    g_assert_nonnull(graph);
+
+    HParser *parser = h_ch('a');
+    h_parser_graph_end(graph);
+    quarantine.target = parser;
+
+    GThread *worker = g_thread_new("parser-free", free_parser_from_worker, parser);
+    g_thread_join(worker);
+    g_assert_cmpuint(quarantine.target_frees, ==, 1);
+
+    h_parser_graph_free(graph);
+    g_assert_cmpuint(quarantine.target_frees, ==, 1);
+
+    system_allocator = saved;
+}
+
+static void test_parser_graph_foreign_free_removes_registry_entry(void) {
+    QuarantineAllocator quarantine = {0};
+    HAllocator saved = install_quarantine_allocator(&quarantine);
+    HParserGraph *graph = h_parser_graph_begin();
+    g_assert_nonnull(graph);
+    h_ch('a');
+    h_parser_graph_end(graph);
+
+    GThread *worker = g_thread_new("graph-free", free_graph_from_worker, graph);
+    GThread *duplicate_worker = g_thread_new("graph-free-duplicate", free_graph_from_worker, graph);
+    g_thread_join(worker);
+    g_thread_join(duplicate_worker);
+
+    /*
+     * These graphs are created and destroyed on the construction thread after
+     * the foreign free. The untracked parser makes registry traversal inspect
+     * the old graph if the foreign free left a stale entry behind.
+     */
+    for (unsigned i = 0; i < 2; ++i) {
+        HParserGraph *subsequent = h_parser_graph_begin();
+        g_assert_nonnull(subsequent);
+        h_parser_graph_end(subsequent);
+        h_parser_graph_free(subsequent);
+
+        HParser *untracked = h_ch((uint8_t)('b' + i));
+        h_parser_free(untracked);
+    }
+
+    system_allocator = saved;
+}
+
 void register_parser_free_tests(void) {
     g_test_add_func("/core/parser/free/sequence_variants", test_sequence_variants_free_root);
     g_test_add_func("/core/parser/free/drop_from_variants",
@@ -404,12 +616,25 @@ void register_parser_free_tests(void) {
                     test_lalr_desugaring_context_is_freed);
     g_test_add_func("/core/parser/free/lalr_desugaring_context_child_first",
                     test_lalr_desugaring_context_survives_child_frees);
-    g_test_add_func("/core/parser/free/lalr_conflict_table",
-                    test_lalr_conflict_frees_table);
+    g_test_add_func("/core/parser/free/lalr_conflict_table", test_lalr_conflict_frees_table);
     g_test_add_func("/core/parser/free/lalr_independently_desugared_child",
                     test_lalr_parent_retains_independently_desugared_child);
     g_test_add_func("/core/parser/free/llk_terminal_start", test_llk_terminal_start_is_freed);
     g_test_add_func("/core/parser/free/contextfree_child_env",
                     test_contextfree_parent_survives_freed_child_env);
-    g_test_add_func("/core/parser/free/regex_child_env", test_regex_parent_survives_freed_child_env);
+    g_test_add_func("/core/parser/free/regex_child_env",
+                    test_regex_parent_survives_freed_child_env);
+    g_test_add_func("/core/parser/free/graph/complete", test_parser_graph_frees_complete_graph);
+    g_test_add_func("/core/parser/free/graph/ends_collection",
+                    test_parser_graph_free_ends_collection);
+    g_test_add_func("/core/parser/free/graph/shared_and_owned",
+                    test_parser_graph_handles_shared_and_owned_nodes);
+    g_test_add_func("/core/parser/free/graph/nested", test_parser_graph_nested_lifetimes);
+    g_test_add_func("/core/parser/free/graph/parser_allocator",
+                    test_parser_graph_uses_parser_allocator);
+    g_test_add_func("/core/parser/free/graph/grows", test_parser_graph_grows);
+    g_test_add_func("/core/parser/free/graph/cross_thread_parser",
+                    test_parser_graph_untracks_cross_thread_parser_free);
+    g_test_add_func("/core/parser/free/graph/cross_thread_graph",
+                    test_parser_graph_foreign_free_removes_registry_entry);
 }
