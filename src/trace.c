@@ -21,9 +21,9 @@
 
 #include <ctype.h>    // isprint()
 #include <inttypes.h> // PRIu64 etc.
+#include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h> // memcpy(), memset()
@@ -1489,9 +1489,9 @@ void dump_rvm_prog(HTraceState *trace_state, HRVMProg *prog) {
         trace_writer_printf(out, "%4d %-10s", i, rvm_op_names[insn->op]);
         const HParser *display_parser =
             h_diagnostic_context_parser(prog->insn_contexts[i], prog->insn_parsers[i]);
-        const char *parser_name =
-            display_parser && display_parser->vtable ? trace_parser_diagnostic_name(display_parser)
-                                                      : NULL;
+        const char *parser_name = display_parser && display_parser->vtable
+                                      ? trace_parser_diagnostic_name(display_parser)
+                                      : NULL;
         switch (insn->op) {
         case RVM_PUSH:
             if (parser_name) {
@@ -1545,9 +1545,9 @@ void dump_svm_prog(HTraceState *trace_state, HRVMProg *prog, HRVMTrace *trace) {
 
         const HParser *display_parser =
             h_diagnostic_context_parser(trace->diagnostic_context, trace->parser);
-        const char *parser_name =
-            display_parser && display_parser->vtable ? trace_parser_diagnostic_name(display_parser)
-                                                      : NULL;
+        const char *parser_name = display_parser && display_parser->vtable
+                                      ? trace_parser_diagnostic_name(display_parser)
+                                      : NULL;
         if (parser_name) {
             trace_writer_printf(out, " parser=%s", parser_name);
         }
@@ -2178,8 +2178,7 @@ void h_cf_trace_parser_enter(HTraceState *trace, const HParser *parser, size_t i
         const char *name =
             origin && origin->vtable ? trace_parser_diagnostic_name(origin) : "?(no parser)";
         trace_indent(trace);
-        trace_writer_printf(out, "-> %-20s %-11s @%zu", name, role ? role : "nonterminal",
-                            index);
+        trace_writer_printf(out, "-> %-20s %-11s @%zu", name, role ? role : "nonterminal", index);
         trace_writer_print_source(out, origin);
         trace_writer_putc(out, '\n');
     }

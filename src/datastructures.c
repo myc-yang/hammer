@@ -445,8 +445,8 @@ HHashValue h_hash_bytes(const uint8_t *buf, size_t len) {
     uint32_t hash = 0;
 
     while (len >= 4) {
-        uint32_t block = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) |
-                         ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24);
+        uint32_t block = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8) | ((uint32_t)buf[2] << 16) |
+                         ((uint32_t)buf[3] << 24);
         block *= UINT32_C(0xcc9e2d51);
         block = h_rotate_left32(block, 15);
         block *= UINT32_C(0x1b873593);
