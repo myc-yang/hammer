@@ -28,8 +28,8 @@
 #include <ctype.h>
 #include <inttypes.h>
 #include <limits.h>
-#include <stdarg.h>
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -587,8 +587,8 @@ HParseResult *h_parse__m(HAllocator *mm__, const HParser *parser, const uint8_t 
 
 // Twin of h_parse() that attaches an independent diagnostic collector to this
 // one parse. The complete execution trace is captured by the extensible
-// diagnostic API. The runtime option controls only whether a concise failure
-// report is also written to stderr.
+// diagnostic API. The runtime option controls only whether a concise report is
+// also written to stderr.
 //
 // If `diagnostic` is non-NULL it receives an owned diagnostic object, including
 // the furthest-failure record (see HParseError), so callers can react to failures
@@ -607,11 +607,11 @@ HParseResult *h_parse_debug__m(HAllocator *mm__, const HParser *parser, const ui
     HTraceState *trace = h_trace_state_new(dumpExecutionTrace);
     HParseResult *res = h_parse_with_trace(mm__, parser, input, length, trace);
     HParseDiagnostic *collected = NULL;
-    if (diagnostic || (!res && h_trace_should_print_summary(trace)))
+    if (diagnostic || h_trace_should_print_summary(trace))
         TRACE_GET_DIAGNOSTIC(trace, &collected);
     if (diagnostic)
         *diagnostic = collected;
-    if (!res && h_trace_should_print_summary(trace) && collected)
+    if (h_trace_should_print_summary(trace) && collected)
         h_parse_diagnostic_fprint_with_input(stderr, collected, input, length);
     if (!diagnostic)
         h_parse_diagnostic_free(collected);
@@ -853,6 +853,10 @@ void h_parse_diagnostic_fprint(FILE *stream, const HParseDiagnostic *diagnostic)
     const HParseError *error = &diagnostic->error;
     fprintf(stream, "=== h_parse_error ===\n");
     fputs("error: ", stream);
+    if (error->kind == H_PARSE_ERROR_NONE) {
+        fputs("parse succeeded\n", stream);
+        return;
+    }
     if (error->source) {
         if (error->source->file_name)
             fprintf(stream, "%s", error->source->file_name);
@@ -944,6 +948,8 @@ int h_compile_for_backend_with_params(HParser *parser, HParserBackendWithParams 
 
 int h_compile_for_backend_with_params__m(HAllocator *mm__, HParser *parser,
                                          HParserBackendWithParams *be_with_params) {
+    if (!be_with_params || !be_with_params->backend)
+        return -1;
     int ret = h_compile__m(mm__, parser, be_with_params->backend, be_with_params->params);
     if (!ret)
         be_with_params->backend_vtable = parser->backend_vtable;

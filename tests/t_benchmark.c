@@ -70,6 +70,24 @@ static void test_benchmark_failed_testcases(void) {
     // Testcases should fail, backend should be skipped
 }
 
+static void test_benchmark_nullness_mismatch(void) {
+    HParser *parser = h_ch('x');
+    HParserTestcase cases[] = {{(const unsigned char *)"x", 1, NULL},
+                               {(const unsigned char *)"y", 1, "u0x79"},
+                               {(const unsigned char *)"y", 1, NULL},
+                               {NULL, 0, NULL}};
+
+    HBenchmarkResults *res = h_benchmark(parser, cases);
+    g_check_cmp_ptr(res, !=, NULL);
+
+    for (size_t i = 0; i < res->len; i++) {
+        if (res->results[i].compile_success) {
+            g_check_cmp_int(res->results[i].failed_testcases, ==, 2);
+            g_check_cmp_ptr(res->results[i].cases, ==, NULL);
+        }
+    }
+}
+
 // Test benchmark.c: h_benchmark_report with NULL cases (line 115)
 static void test_benchmark_report_null_cases(void) {
     HParser *parser = h_ch('x');
@@ -101,6 +119,7 @@ void register_benchmark_tests(void) {
     g_test_add_func("/core/benchmark/m", test_benchmark_m);
     g_test_add_func("/core/benchmark/failed_compile", test_benchmark_failed_compile);
     g_test_add_func("/core/benchmark/failed_testcases", test_benchmark_failed_testcases);
+    g_test_add_func("/core/benchmark/nullness_mismatch", test_benchmark_nullness_mismatch);
     g_test_add_func("/core/benchmark/report_null_cases", test_benchmark_report_null_cases);
     g_test_add_func("/core/benchmark/multiple_backends", test_benchmark_multiple_backends);
 }

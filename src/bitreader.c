@@ -28,7 +28,7 @@
 #define LDB(range, i) (((i) >> LSB(range)) & ((1 << (MSB(range) - LSB(range) + 1)) - 1))
 
 int64_t h_read_bits(HInputStream *state, size_t count, char signed_p) {
-    // BUG: Does not
+    HAMMER_ASSERT(count <= 64);
     size_t original_count = count;
     uint64_t out = 0;
     size_t offset = 0;
