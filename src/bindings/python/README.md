@@ -1,4 +1,4 @@
-#Hammer Python Bindings
+# Hammer Python Bindings
 
 Python bindings for the Hammer parser combinator library, generated with [SWIG](https://www.swig.org/).
 
@@ -75,13 +75,13 @@ scons bindings=python python=/path/to/venv/bin/python installpython
 ```python
 import hammer as h
 
-#Parse the literal bytes "GET "
+# Parse the literal bytes "GET "
 method = h.token(b"GET ")
 
-#Parse one or more printable ASCII characters
+# Parse one or more printable ASCII characters
 printable = h.many1(h.ch_range(b"\x21", b"\x7e"))
 
-#Sequence : method followed by the path
+# Sequence : method followed by the path
 request_line = h.sequence(method, printable)
 
 result = request_line.parse(b"GET /index.html")
@@ -157,11 +157,11 @@ Use `h.float_range(parser, lower, upper)` to require an inclusive range.
 ### Actions and Predicates
 
 ```python
-#Transform a parse result
+# Transform a parse result
 digits = h.action(h.many1(h.ch_range(b"0", b"9")),
                   lambda bs: int(b"".join(bs)))
 
-#Reject a result based on a condition
+# Reject a result based on a condition
 even_byte = h.attr_bool(h.uint8(), lambda n: n % 2 == 0)
 ```
 

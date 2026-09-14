@@ -140,7 +140,7 @@ static const HParserVtable bits_vt = {
 
 HParser *h_bits(size_t len, bool sign) { return h_bits__m(&system_allocator, len, sign); }
 HParser *h_bits__m(HAllocator *mm__, size_t len, bool sign) {
-    if(len>64)
+    if (len > 64)
         return NULL;
     struct bits_env *env = h_new(struct bits_env, 1);
     env->length = len;

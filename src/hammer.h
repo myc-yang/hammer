@@ -664,7 +664,7 @@ HParser *h_float_range__m(HAllocator *mm__, const HParser *p, const double lower
  * @note Consumes 'len' bits from the input stream
  * @note Result values are represented as 64-bit integers. Use len <= 64 for a value-preserving
  * parse; len >64 results in a NULL parser.
- * integer token. Use h_bytes() or a sequence of smaller integer parsers for wider fields.
+ * Use h_bytes() or a sequence of smaller integer parsers for wider fields.
  */
 HParser *h_bits(size_t len, _Bool sign);
 HParser *h_bits__m(HAllocator *mm__, size_t len, _Bool sign);
