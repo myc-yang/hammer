@@ -1,5 +1,7 @@
 from __future__ import absolute_import, division, print_function
 
+import os
+import tempfile
 import unittest
 
 import hammer as h
@@ -778,10 +780,22 @@ class TestParseDiagnostics(unittest.TestCase):
         self.assertIsInstance(diagnostic.execution_trace, (str, type(None)))
 
     def test_diagnostic_snapshot_for_success(self):
-        result, diagnostic = h.ch(b"a").parse_debug(b"a", show=False)
+        with tempfile.TemporaryFile() as stderr:
+            saved_stderr = os.dup(2)
+            try:
+                os.dup2(stderr.fileno(), 2)
+                result, diagnostic = h.ch(b"a").parse_debug(b"a", True)
+            finally:
+                os.dup2(saved_stderr, 2)
+                os.close(saved_stderr)
+            stderr.seek(0)
+            report = stderr.read()
 
         self.assertEqual(result, b"a")
         self.assertIsInstance(diagnostic, (h.ParseDiagnostic, type(None)))
+        if diagnostic is not None:
+            self.assertIn(b"=== h_parse_error ===", report)
+            self.assertIn(b"parse succeeded", report)
 
     def test_end_of_input_expectation(self):
         result, diagnostic = h.end_p().parse_debug(b"a")
