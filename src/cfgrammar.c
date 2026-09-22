@@ -7,6 +7,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <stdint.h>
 
 // type of pairs used as memoization keys by h_follow and h_first
 struct k_nt {
@@ -24,7 +25,7 @@ static bool eq_k_nt(const void *p, const void *q) {
 
 static HHashValue hash_k_nt(const void *p) {
     const struct k_nt *x = p;
-    return h_hash_ptr(x->nt) * x->k;
+    return h_hash_ptr(x->nt) * (HHashValue)(x->k);
 }
 
 HCFGrammar *h_cfgrammar_new(HAllocator *mm__) {
@@ -38,6 +39,7 @@ HCFGrammar *h_cfgrammar_new(HAllocator *mm__) {
     g->geneps = NULL;
     g->first = h_hashtable_new(g->arena, eq_k_nt, hash_k_nt);
     g->follow = h_hashtable_new(g->arena, eq_k_nt, hash_k_nt);
+    g->owned_start = NULL;
 
     HStringMap *eps = h_stringmap_new(g->arena);
     h_stringmap_put_epsilon(eps, INSET);
@@ -52,6 +54,8 @@ HCFGrammar *h_cfgrammar_new(HAllocator *mm__) {
 
 void h_cfgrammar_free(HCFGrammar *g) {
     HAllocator *mm__ = g->mm__;
+    if (g->owned_start)
+        h_free(g->owned_start);
     h_delete_arena(g->arena);
     h_free(g);
 }
@@ -81,17 +85,25 @@ HCFGrammar *h_cfgrammar_(HAllocator *mm__, HCFChoice *desugared) {
     collect_nts(g, desugared);
     if (h_hashset_empty(g->nts)) {
         // desugared is a terminal. wrap it in a singleton HCF_CHOICE.
-        HCFChoice *nt = h_new(HCFChoice, 1);
+        HCFStartWrapper *wrapper = h_new(HCFStartWrapper, 1);
+        HCFChoice *nt = &wrapper->choice;
+        g->owned_start = wrapper;
         nt->type = HCF_CHOICE;
-        nt->seq = h_new(HCFSequence *, 2);
-        nt->seq[0] = h_new(HCFSequence, 1);
-        nt->seq[0]->items = h_new(HCFChoice *, 2);
-        nt->seq[0]->items[0] = desugared;
-        nt->seq[0]->items[1] = NULL;
-        nt->seq[1] = NULL;
+        nt->data.seq = wrapper->alternatives;
+        nt->data.seq[0] = &wrapper->sequence;
+        nt->data.seq[0]->items = wrapper->items;
+        nt->data.seq[0]->items[0] = desugared;
+        nt->data.seq[0]->items[1] = NULL;
+        nt->data.seq[1] = NULL;
         nt->pred = NULL;
         nt->action = NULL;
+        nt->plan_action = NULL;
         nt->reshape = h_act_first;
+        nt->parser = desugared->parser;
+        nt->diagnostic_context = desugared->diagnostic_context;
+        nt->env = NULL;
+        nt->user_data = NULL;
+        nt->dispatch_opcode = 0;
         h_hashset_put(g->nts, nt);
         g->start = nt;
     } else {
@@ -130,9 +142,9 @@ static void collect_nts(HCFGrammar *grammar, HCFChoice *symbol) {
         // NB top-level (start) symbol gets 0.
         h_hashtable_put(grammar->nts, symbol, (void *)(uintptr_t)grammar->nts->used);
 
-        // each element s of symbol->seq (HCFSequence) represents the RHS of
+        // each element s of symbol->data.seq (HCFSequence) represents the RHS of
         // a production. call self on all symbols (HCFChoice) in s.
-        for (s = symbol->seq; *s != NULL; s++) {
+        for (s = symbol->data.seq; *s != NULL; s++) {
             for (x = (*s)->items; *x != NULL; x++) {
                 collect_nts(grammar, *x);
             }
@@ -198,7 +210,7 @@ static void collect_geneps(HCFGrammar *g) {
 
                 // this NT derives epsilon if any one of its productions does.
                 HCFSequence **p;
-                for (p = symbol->seq; *p != NULL; p++) {
+                for (p = symbol->data.seq; *p != NULL; p++) {
                     if (h_derives_epsilon_seq(g, (*p)->items)) {
                         h_hashset_put(g->geneps, symbol);
                         break;
@@ -230,7 +242,7 @@ static void remove_productions_with(HCFGrammar *g, const HCFChoice *x) {
             assert(symbol->type == HCF_CHOICE);
 
             HCFSequence **p, **q;
-            for (p = symbol->seq; *p != NULL;) {
+            for (p = symbol->data.seq; *p != NULL;) {
                 if (mentions_symbol((*p)->items, x)) {
                     // remove production p
                     for (q = p; *(q + 1) != NULL; q++)
@@ -261,7 +273,7 @@ static void eliminate_dead_rules(HCFGrammar *g) {
                 assert(symbol->type == HCF_CHOICE);
 
                 // this NT is dead if it has no productions
-                if (*symbol->seq == NULL)
+                if (*symbol->data.seq == NULL)
                     found = true;
             }
         }
@@ -391,7 +403,7 @@ void *h_stringmap_get_lookahead(const HStringMap *m, HInputStream lookahead) {
 
         // note the lookahead stream is passed by value, i.e. a copy.
         // reading bits from it does not consume them from the real input.
-        uint8_t c = h_read_bits(&lookahead, 8, false);
+        uint8_t c = (uint8_t)h_read_bits(&lookahead, 8, false);
 
         if (lookahead.overrun) {        // end of chunk
             if (lookahead.last_chunk) { // end of input
@@ -473,12 +485,12 @@ static const HStringMap *h_first_work(size_t k, HCFGrammar *g, HHashTable **pws,
 
     switch (x->type) {
     case HCF_CHAR:
-        h_stringmap_put_char(ret, x->chr, INSET);
+        h_stringmap_put_char(ret, x->data.chr, INSET);
         break;
     case HCF_CHARSET:
         c = 0;
         do {
-            if (charset_isset(x->charset, c)) {
+            if (charset_isset(x->data.charset, c)) {
                 h_stringmap_put_char(ret, c, INSET);
             }
         } while (c++ < 255);
@@ -495,7 +507,7 @@ static const HStringMap *h_first_work(size_t k, HCFGrammar *g, HHashTable **pws,
         h_hashtable_put(ws, pkx, ret);
 
         // return the union of the first sets of all productions
-        for (p = x->seq; *p; ++p) {
+        for (p = x->data.seq; *p; ++p) {
             const HStringMap *first_rhs = h_first_seq_work(k, g, pws, (*p)->items);
             assert(ws == *pws); // call above did not change the workset pointer
             taint |= first_rhs->taint;
@@ -724,7 +736,7 @@ static const HStringMap *h_follow_work(size_t k, HCFGrammar *g, HHashTable **pws
 
             // iterate over the productions for A
             HCFSequence **p;
-            for (p = a->seq; *p; p++) {
+            for (p = a->data.seq; *p; p++) {
                 HCFChoice **s = (*p)->items; // production's right-hand side
 
                 for (; *s; s++) {
@@ -877,20 +889,21 @@ static void pprint_charset_char(FILE *f, uint8_t c) {
 }
 
 static void pprint_charset(FILE *f, const HCharset cs) {
-    int i;
+    unsigned int i;
 
     fputc('[', f);
     for (i = 0; i < 256; i++) {
-        if (charset_isset(cs, i)) {
-            pprint_charset_char(f, i);
+        if (charset_isset(cs, (uint8_t)i)) {
+            pprint_charset_char(f, (uint8_t)i);
 
             // detect ranges
-            if (i + 2 < 256 && charset_isset(cs, i + 1) && charset_isset(cs, i + 2)) {
+            if (i + 2 < 256 && charset_isset(cs, (uint8_t)i + 1) &&
+                charset_isset(cs, (uint8_t)i + 2)) {
                 fputc('-', f);
-                for (; i < 256 && charset_isset(cs, i); i++)
+                for (; i < 256 && charset_isset(cs, (uint8_t)i); i++)
                     ;
                 i--; // back to the last in range
-                pprint_charset_char(f, i);
+                pprint_charset_char(f, (uint8_t)i);
             }
         }
     }
@@ -906,7 +919,7 @@ static const char *nonterminal_name(const HCFGrammar *g, const HCFChoice *nt) {
     // NB the start symbol (number 0) is always "A".
     int i;
     for (i = 14; i >= 0 && (n > 0 || i == 14); i--) {
-        buf[i] = 'A' + n % 26;
+        buf[i] = 'A' + (char)(n % 26);
         n = n / 26; // shift one digit
     }
 
@@ -919,7 +932,7 @@ static HCFChoice **pprint_string(FILE *f, HCFChoice **x) {
         if ((*x)->type != HCF_CHAR) {
             break;
         }
-        h_pprint_char(f, (*x)->chr);
+        h_pprint_char(f, (*x)->data.chr);
     }
     fputc('"', f);
     return x;
@@ -929,14 +942,14 @@ void h_pprint_symbol(FILE *f, const HCFGrammar *g, const HCFChoice *x) {
     switch (x->type) {
     case HCF_CHAR:
         fputc('"', f);
-        h_pprint_char(f, x->chr);
+        h_pprint_char(f, x->data.chr);
         fputc('"', f);
         break;
     case HCF_END:
         fputc('$', f);
         break;
     case HCF_CHARSET:
-        pprint_charset(f, x->charset);
+        pprint_charset(f, x->data.charset);
         break;
     default:
         fputs(nonterminal_name(g, x), f);
@@ -971,9 +984,10 @@ static void pprint_sequence(FILE *f, const HCFGrammar *g, const HCFSequence *seq
     fputc('\n', f);
 }
 
-static void pprint_ntrules(FILE *f, const HCFGrammar *g, const HCFChoice *nt, int indent, int len) {
-    int i;
-    int column = indent + len;
+static void pprint_ntrules(FILE *f, const HCFGrammar *g, const HCFChoice *nt, size_t indent,
+                           size_t len) {
+    size_t i;
+    size_t column = indent + len;
 
     const char *name = nonterminal_name(g, nt);
 
@@ -986,7 +1000,7 @@ static void pprint_ntrules(FILE *f, const HCFGrammar *g, const HCFChoice *nt, in
         fputc(' ', f);
 
     assert(nt->type == HCF_CHOICE);
-    HCFSequence **p = nt->seq;
+    HCFSequence **p = nt->data.seq;
     if (*p == NULL) {
         fputs(" -x\n", f); // empty choice, e.g. h_nothing_p()
         return;
@@ -1002,7 +1016,7 @@ static void pprint_ntrules(FILE *f, const HCFGrammar *g, const HCFChoice *nt, in
     }
 }
 
-void h_pprint_grammar(FILE *file, const HCFGrammar *g, int indent) {
+void h_pprint_grammar(FILE *file, const HCFGrammar *g, size_t indent) {
     HAllocator *mm__ = g->mm__;
 
     if (g->nts->used < 1) {
@@ -1010,7 +1024,7 @@ void h_pprint_grammar(FILE *file, const HCFGrammar *g, int indent) {
     }
 
     // determine maximum string length of symbol names
-    int len;
+    size_t len;
     size_t s;
     for (len = 1, s = 26; s < g->nts->used; len++, s *= 26)
         ;
@@ -1039,8 +1053,8 @@ void h_pprint_grammar(FILE *file, const HCFGrammar *g, int indent) {
     h_free(arr);
 }
 
-void h_pprint_symbolset(FILE *file, const HCFGrammar *g, const HHashSet *set, int indent) {
-    int j;
+void h_pprint_symbolset(FILE *file, const HCFGrammar *g, const HHashSet *set, size_t indent) {
+    size_t j;
     for (j = 0; j < indent; j++)
         fputc(' ', file);
 
@@ -1073,7 +1087,7 @@ void h_pprint_symbolset(FILE *file, const HCFGrammar *g, const HHashSet *set, in
 static bool pprint_stringmap_elems(FILE *file, bool first, char *prefix, size_t n, char sep,
                                    void (*valprint)(FILE *f, void *env, void *val), void *env,
                                    const HStringMap *map) {
-    assert(n < BUFSIZE - 4);
+    HAMMER_ASSERT(n < BUFSIZE - 4);
 
     if (map->epsilon_branch) {
         if (!first) {
@@ -1123,7 +1137,7 @@ static bool pprint_stringmap_elems(FILE *file, bool first, char *prefix, size_t 
             if (hte->key == NULL) {
                 continue;
             }
-            uint8_t c = key_char((HCharKey)hte->key);
+            char c = (char)key_char((HCharKey)hte->key);
             HStringMap *ends = hte->value;
 
             size_t n_ = n;
@@ -1160,7 +1174,13 @@ static bool pprint_stringmap_elems(FILE *file, bool first, char *prefix, size_t 
                 if (isprint(c)) {
                     prefix[n_++] = c;
                 } else {
-                    n_ += sprintf(prefix + n_, "\\x%.2X", c);
+                    size_t available = (size_t)BUFSIZE - n_;
+                    int written =
+                        snprintf(prefix + n_, available, "\\x%02X", (unsigned int)(unsigned char)c);
+                    if (written < 0 || (size_t)written >= available) {
+                        return first; /* formatting error or insufficient buffer */
+                    }
+                    n_ += (size_t)written;
                 }
             }
 
@@ -1177,8 +1197,8 @@ void h_pprint_stringmap(FILE *file, char sep, void (*valprint)(FILE *f, void *en
     pprint_stringmap_elems(file, true, buf, 0, sep, valprint, env, map);
 }
 
-void h_pprint_stringset(FILE *file, const HStringMap *set, int indent) {
-    int j;
+void h_pprint_stringset(FILE *file, const HStringMap *set, size_t indent) {
+    size_t j;
     for (j = 0; j < indent; j++)
         fputc(' ', file);
 

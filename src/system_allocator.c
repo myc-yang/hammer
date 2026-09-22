@@ -86,4 +86,6 @@ HAllocator system_allocator = {
     .alloc = system_alloc,
     .realloc = system_realloc,
     .free = system_free,
+    .vt = NULL,
+    .env = NULL,
 };

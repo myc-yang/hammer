@@ -35,23 +35,76 @@ static void test_tt_registry(void) {
                       0);
 }
 
+// Helper state for the out-of-memory test allocator.
+#define FAIL_ALLOCATOR_MAX_LIVE 64
+typedef struct {
+    HAllocator allocator;
+    void *live[FAIL_ALLOCATOR_MAX_LIVE];
+    size_t outstanding;
+} FailAllocator;
+
+static size_t fail_find_live(FailAllocator *state, void *ptr) {
+    for (size_t i = 0; i < state->outstanding; i++) {
+        if (state->live[i] == ptr)
+            return i;
+    }
+    return SIZE_MAX;
+}
+
+static void fail_track_live(FailAllocator *state, void *ptr) {
+    assert(ptr != NULL);
+    assert(state->outstanding < FAIL_ALLOCATOR_MAX_LIVE);
+    state->live[state->outstanding++] = ptr;
+}
+
 // Helper function for out-of-memory test allocator
 static void *fail_alloc(HAllocator *mm__, size_t size) {
-    if (size - 0xdead <= 0x30) // allow for overhead of arena link structure
+    FailAllocator *state = (FailAllocator *)mm__;
+    if (size >= 0xdead && size <= 0xdead + 0x30)
         return NULL;
-    return system_allocator.alloc(&system_allocator, size);
+
+    void *ptr = system_allocator.alloc(&system_allocator, size);
+    if (ptr)
+        fail_track_live(state, ptr);
+    return ptr;
 }
 
 // Helper function for out-of-memory test realloc
 static void *fail_realloc(HAllocator *mm__, void *ptr, size_t size) {
-    return system_allocator.realloc(&system_allocator, ptr, size);
+    FailAllocator *state = (FailAllocator *)mm__;
+    if (!ptr)
+        return fail_alloc(mm__, size);
+
+    size_t slot = fail_find_live(state, ptr);
+    assert(slot != SIZE_MAX);
+    void *new_ptr = system_allocator.realloc(&system_allocator, ptr, size);
+    if (new_ptr)
+        state->live[slot] = new_ptr;
+    return new_ptr;
 }
 
 // Helper function for out-of-memory test free
 static void fail_free(HAllocator *mm__, void *ptr) {
-    return system_allocator.free(&system_allocator, ptr);
+    if (!ptr)
+        return;
+
+    FailAllocator *state = (FailAllocator *)mm__;
+    size_t slot = fail_find_live(state, ptr);
+    assert(slot != SIZE_MAX);
+    state->live[slot] = state->live[--state->outstanding];
+    system_allocator.free(&system_allocator, ptr);
 }
-static HAllocator fail_allocator = {fail_alloc, fail_realloc, fail_free};
+
+static void fail_release_outstanding(FailAllocator *state) {
+    while (state->outstanding > 0) {
+        void *ptr = state->live[--state->outstanding];
+        system_allocator.free(&system_allocator, ptr);
+    }
+}
+
+static FailAllocator fail_allocator = {
+    .allocator = {fail_alloc, fail_realloc, fail_free, NULL, NULL},
+};
 
 // Helper function for out-of-memory test action
 static HParsedToken *act_oom(const HParseResult *r, void *user) {
@@ -69,20 +122,35 @@ static void test_oom(void) {
     g_check_parse_chunks_ok(p, PB_PACKRAT, "", 0, "x", 1);
 
     // ...and fail gracefully with the broken one
-    HAllocator *mm__ = &fail_allocator;
+    HAllocator *mm__ = &fail_allocator.allocator;
+    assert(fail_allocator.outstanding == 0);
+
     g_check_parse_failed__m(mm__, p, PB_PACKRAT, "x", 1);
+    size_t outstanding_after_parse = fail_allocator.outstanding;
+    fail_release_outstanding(&fail_allocator);
+
     g_check_parse_chunks_failed__m(mm__, p, PB_PACKRAT, "", 0, "x", 1);
+    size_t outstanding_after_chunks = fail_allocator.outstanding;
+    fail_release_outstanding(&fail_allocator);
+
+    /*
+     * Recover leaked allocations before asserting so this regression test
+     * remains clean under LeakSanitizer while it is demonstrating the bug.
+     */
+    g_check_cmp_size(outstanding_after_parse, ==, 0);
+    g_check_cmp_size(outstanding_after_chunks, ==, 0);
+    g_check_cmp_size(fail_allocator.outstanding, ==, 0);
 }
+
+// Use H_ACT_APPLY to create wrapper actions
+H_ACT_APPLY(act_index_0, h_act_index, 0)
+H_ACT_APPLY(act_index_1, h_act_index, 1)
+H_ACT_APPLY(act_index_2, h_act_index, 2)
+H_ACT_APPLY(act_index_neg, h_act_index, -1)
+H_ACT_APPLY(act_index_large, h_act_index, 10)
 
 static void test_glue_act_index(void) {
     HParser *p = h_sequence(h_ch('a'), h_ch('b'), h_ch('c'), NULL);
-
-    // Use H_ACT_APPLY to create wrapper actions
-    H_ACT_APPLY(act_index_0, h_act_index, 0);
-    H_ACT_APPLY(act_index_1, h_act_index, 1);
-    H_ACT_APPLY(act_index_2, h_act_index, 2);
-    H_ACT_APPLY(act_index_neg, h_act_index, -1);
-    H_ACT_APPLY(act_index_large, h_act_index, 10);
 
     HParser *act0 = h_action(p, act_index_0, NULL);
     HParser *act1 = h_action(p, act_index_1, NULL);
@@ -185,14 +253,14 @@ static void test_glue_make_functions(void) {
     HParser *p_double = h_action(h_epsilon_p(), make_double_action, NULL);
     res = h_parse(p_double, (const uint8_t *)"", 0);
     g_check_cmp_int(res->ast->token_type, ==, TT_DOUBLE);
-    g_check_cmpdouble(res->ast->dbl, ==, 3.14159);
+    g_check_cmpdouble(res->ast->token_data.dbl, ==, 3.14159);
     h_parse_result_free(res);
 
     // Test h_make_float
     HParser *p_float = h_action(h_epsilon_p(), make_float_action, NULL);
     res = h_parse(p_float, (const uint8_t *)"", 0);
     g_check_cmp_int(res->ast->token_type, ==, TT_FLOAT);
-    g_check_cmpfloat(res->ast->flt, ==, 2.718f);
+    g_check_cmpfloat(res->ast->token_data.flt, ==, 2.718f);
     h_parse_result_free(res);
 }
 
@@ -221,13 +289,22 @@ HParsedToken *snoc_action(const HParseResult *p, void *user) {
 }
 
 HParsedToken *append_action(const HParseResult *p, void *user) {
-    HParsedToken *seq1 = (HParsedToken *)p->ast;
-    // Parse second sequence
-    HParseResult *res2 = h_parse((HParser *)user, (const uint8_t *)"cd", 2);
-    HParsedToken *seq2 = (HParsedToken *)res2->ast;
+    HParsedToken *seq1 = h_seq_index(p->ast, 0);
+    const HParsedToken *seq2 = h_seq_index(p->ast, 1);
     h_seq_append(seq1, seq2);
-    h_parse_result_free(res2);
     return seq1;
+}
+
+HParsedToken *remove_action_1(const HParseResult *p, void *user) {
+    HParsedToken *seq = (HParsedToken *)p->ast;
+    h_seq_remove(seq, 1);
+    return seq;
+}
+
+HParsedToken *remove_action_2(const HParseResult *p, void *user) {
+    HParsedToken *seq = (HParsedToken *)p->ast;
+    h_seq_remove(seq, 2);
+    return seq;
 }
 
 static void test_glue_seq_append_snoc(void) {
@@ -239,8 +316,45 @@ static void test_glue_seq_append_snoc(void) {
     // Test h_seq_append
     HParser *p1 = h_sequence(h_ch('a'), h_ch('b'), NULL);
     HParser *p2 = h_sequence(h_ch('c'), h_ch('d'), NULL);
-    HParser *p_append = h_action(p1, append_action, p2);
-    g_check_parse_match(p_append, PB_PACKRAT, "ab", 2, "(u0x61 u0x62 u0x63 u0x64)");
+    HParser *p_append =
+        h_action(h_sequence(p1, p2, NULL), append_action, NULL);
+
+    g_check_parse_match(
+        p_append, PB_PACKRAT, "abcd", 4,
+        "(u0x61 u0x62 u0x63 u0x64)");
+}
+
+static void test_glue_seq_remove(void) {
+
+    // Test h_seq_remove w/ param n=1
+    HParser *p = h_sequence(h_ch('a'), h_ch('b'), NULL);
+    HParser *p_remove = h_action(p, remove_action_1, NULL);
+    g_check_parse_match(p_remove, PB_PACKRAT, "ab", 2, "(u0x61)");
+}
+
+static void test_glue_seq_remove_multiple(void) {
+
+    // Test h_seq_remove w/ param n=2 fpr 2 tokens
+    HParser *p = h_sequence(h_ch('a'), h_ch('b'), NULL);
+    HParser *p_remove = h_action(p, remove_action_2, NULL);
+    g_check_parse_match(p_remove, PB_PACKRAT, "ab", 2, "()");
+}
+
+static void test_glue_seq_remove_too_many(void) {
+
+    // Test h_seq_remove w/ param n=2 for 1 token.
+    HParser *p = h_sequence(h_ch('a'), NULL);
+    HParser *p_remove = h_action(p, remove_action_2, NULL);
+    g_check_parse_match(p_remove, PB_PACKRAT, "a", 1, "()");
+}
+
+static void test_glue_seq_remove_and_append(void) {
+
+    // Test h_seq_remove and h_seq_snoc work together
+    HParser *p = h_sequence(h_ch('a'), h_ch('b'), NULL);
+    HParser *p_remove = h_action(p, remove_action_1, NULL);
+    HParser *p_snoc = h_action(p_remove, snoc_action, NULL);
+    g_check_parse_match(p_snoc, PB_PACKRAT, "ab", 2, "(u0x61 u0x2a)");
 }
 
 HParsedToken *test_vpath_helper(const HParsedToken *p, ...) {
@@ -266,12 +380,12 @@ static void test_glue_seq_index_vpath(void) {
 
     HParsedToken *tok01 = h_seq_index_path(res->ast, 0, 1, -1);
     g_check_cmp_int(tok01->token_type, ==, TT_UINT);
-    g_check_cmp_int64(tok01->uint, ==, 0x62); // 'b'
+    g_check_cmp_int64(tok01->token_data.uint, ==, 0x62); // 'b'
 
     // Test h_seq_index_vpath directly
     HParsedToken *tok_vpath = test_vpath_helper(res->ast, 0, 1, -1);
     g_check_cmp_int(tok_vpath->token_type, ==, TT_UINT);
-    g_check_cmp_int64(tok_vpath->uint, ==, 0x62);
+    g_check_cmp_int64(tok_vpath->token_data.uint, ==, 0x62);
 
     h_parse_result_free(res);
 }
@@ -389,6 +503,10 @@ void register_misc_tests(void) {
     g_test_add_func("/core/misc/glue_make_functions", test_glue_make_functions);
     g_test_add_func("/core/misc/glue_seq_flatten", test_glue_seq_flatten);
     g_test_add_func("/core/misc/glue_seq_append_snoc", test_glue_seq_append_snoc);
+    g_test_add_func("/core/misc/glue_seq_remove_and_append", test_glue_seq_remove_and_append);
+    g_test_add_func("/core/misc/glue_seq_remove", test_glue_seq_remove);
+    g_test_add_func("/core/misc/glue_seq_remove_multiple", test_glue_seq_remove_multiple);
+    g_test_add_func("/core/misc/glue_seq_remove_too_many", test_glue_seq_remove_too_many);
     g_test_add_func("/core/misc/glue_seq_index_vpath", test_glue_seq_index_vpath);
     g_test_add_func("/core/misc/pprint_basic", test_pprint_basic);
     g_test_add_func("/core/misc/pprint_write_result_unamb", test_pprint_write_result_unamb);

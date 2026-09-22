@@ -10,6 +10,7 @@ static HParseResult *parse_unimplemented(void *env, HParseState *state) {
 }
 
 static const HParserVtable unimplemented_vt = {
+    .name = "h_unimplemented",
     .parse = parse_unimplemented,
     .isValidRegular = h_false,
     .isValidCF = h_false,
@@ -19,5 +20,5 @@ static const HParserVtable unimplemented_vt = {
 
 static HParser unimplemented = {.vtable = &unimplemented_vt, .env = NULL};
 
-const HParser *h_unimplemented() { return &unimplemented; }
+const HParser *h_unimplemented(void) { return &unimplemented; }
 const HParser *h_unimplemented__m(HAllocator *mm__) { return &unimplemented; }

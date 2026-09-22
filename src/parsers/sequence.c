@@ -4,11 +4,6 @@
 #include <assert.h>
 #include <stdarg.h>
 
-typedef struct {
-    size_t len;
-    HParser **p_array;
-} HSequence;
-
 static HParseResult *parse_sequence(void *env, HParseState *state) {
     HSequence *s = (HSequence *)env;
     HCountedArray *seq = h_carray_new_sized(state->arena, (s->len > 0) ? s->len : 4);
@@ -24,7 +19,7 @@ static HParseResult *parse_sequence(void *env, HParseState *state) {
     }
     HParsedToken *tok = a_new(HParsedToken, 1);
     tok->token_type = TT_SEQUENCE;
-    tok->seq = seq;
+    tok->token_data.seq = seq;
     tok->index = 0;
     tok->bit_offset = 0;
     tok->bit_length = 0;
@@ -56,14 +51,14 @@ static HParsedToken *reshape_sequence(const HParseResult *p, void *user_data) {
     HCountedArray *seq = h_carray_new(p->arena);
 
     // drop all elements that are NULL
-    for (size_t i = 0; i < p->ast->seq->used; i++) {
-        if (p->ast->seq->elements[i] != NULL)
-            h_carray_append(seq, p->ast->seq->elements[i]);
+    for (size_t i = 0; i < p->ast->token_data.seq->used; i++) {
+        if (p->ast->token_data.seq->elements[i] != NULL)
+            h_carray_append(seq, p->ast->token_data.seq->elements[i]);
     }
 
     HParsedToken *res = a_new_(p->arena, HParsedToken, 1);
     res->token_type = TT_SEQUENCE;
-    res->seq = seq;
+    res->token_data.seq = seq;
     res->index = p->ast->index;
     res->bit_offset = p->ast->bit_offset;
     res->bit_length = p->bit_length;
@@ -85,13 +80,46 @@ static void desugar_sequence(HAllocator *mm__, HCFStack *stk__, void *env) {
     HCFS_END_CHOICE();
 }
 
+static bool sequence_ctrvm(HRVMProg *prog, void *env) {
+    HSequence *s = (HSequence *)env;
+    h_rvm_insert_insn(prog, RVM_PUSH, 0);
+    for (size_t i = 0; i < s->len; ++i) {
+        if (!h_compile_regex(prog, s->p_array[i]))
+            return false;
+    }
+    h_rvm_insert_insn(prog, RVM_ACTION,
+                      h_rvm_create_action(prog, h_svm_action_make_sequence, NULL));
+    return true;
+}
+
 static const HParserVtable sequence_vt = {
+    .name = "h_sequence",
     .parse = parse_sequence,
     .isValidRegular = sequence_isValidRegular,
     .isValidCF = sequence_isValidCF,
+    .compile_to_rvm = sequence_ctrvm,
     .desugar = desugar_sequence,
     .higher = true,
 };
+
+typedef struct HRewriteSequence {
+    HSequence sequence;
+    HParser **owned_parsers;
+    size_t owned_len;
+} HRewriteSequence;
+
+static void h_free_rewrite_sequence_env(HAllocator *mm__, void *env) {
+    HRewriteSequence *rewrite = env;
+    if (!rewrite)
+        return;
+
+    for (size_t i = 0; i < rewrite->owned_len; ++i)
+        h_parser_free__m(mm__, rewrite->owned_parsers[i]);
+
+    mm__->free(mm__, rewrite->owned_parsers);
+    mm__->free(mm__, rewrite->sequence.p_array);
+    mm__->free(mm__, rewrite);
+}
 
 HParser *h_sequence(HParser *p, ...) {
     va_list ap;
@@ -114,7 +142,7 @@ HParser *h_sequence__v(HParser *p, va_list ap) { return h_sequence__mv(h_default
 HParser *h_sequence__mv(HAllocator *mm__, HParser *p, va_list ap_) {
     HSequence *s = h_new(HSequence, 1);
     s->len = 0;
-
+    s->p_array = NULL;
     if (p) {
         // non-empty sequence
         const HParser *arg;
@@ -139,15 +167,16 @@ HParser *h_sequence__mv(HAllocator *mm__, HParser *p, va_list ap_) {
         va_end(ap);
 
         s->len = len;
-    }
 
-    return h_new_parser(mm__, &sequence_vt, s);
+        return h_new_parser_with_free(mm__, &sequence_vt, s, h_free_seq_env);
+    }
+    return h_new_parser_with_free(mm__, &sequence_vt, s, h_free_seq_env);
 }
 
 HParser *h_sequence__a(void *args[]) { return h_sequence__ma(h_default_allocator, args); }
 
 HParser *h_sequence__ma(HAllocator *mm__, void *args[]) {
-    size_t len = -1; // because do...while
+    size_t len = (size_t)-1; // because do...while
     const HParser *arg;
 
     do {
@@ -162,13 +191,7 @@ HParser *h_sequence__ma(HAllocator *mm__, void *args[]) {
     }
 
     s->len = len;
-    HParser *ret = h_new(HParser, 1);
-    ret->vtable = &sequence_vt;
-    ret->env = (void *)s;
-    ret->backend = h_get_default_backend();
-    ret->backend_vtable = h_get_default_backend_vtable();
-    ret->desugared = NULL;
-    return ret;
+    return h_new_parser_with_free(mm__, &sequence_vt, s, h_free_seq_env);
 }
 
 HParser *h_drop_from_(HParser *p, ...) {
@@ -197,9 +220,7 @@ HParser *h_drop_from___v(HParser *p, va_list ap) {
 }
 
 HParser *h_drop_from___mv(HAllocator *mm__, HParser *p, va_list ap) {
-    /* Ok, here's where things get funny.
-     *
-     * Saying `h_drop_from(h_sequence(a, b, c, d, e, NULL), 0, 4, -1)` is functionally
+    /* Saying `h_drop_from(h_sequence(a, b, c, d, e, NULL), 0, 4, -1)` is functionally
      * equivalent to `h_sequence(h_ignore(a), b, c, d, h_ignore(e), NULL)`. Thus, this
      * term rewrites itself, becoming an h_sequence where some parsers are ignored.
      */
@@ -211,24 +232,28 @@ HParser *h_drop_from___mv(HAllocator *mm__, HParser *p, va_list ap) {
     int arg = 0;
 
     for (arg = va_arg(ap, int); arg >= 0; arg = va_arg(ap, int)) {
-        indices[count] = arg;
+        indices[count] = (size_t)arg;
         count++;
     }
     va_end(ap);
 
-    HSequence *rewrite = h_new(HSequence, 1);
-    rewrite->p_array = h_new(HParser *, s->len);
-    rewrite->len = s->len;
+    HRewriteSequence *rewrite = h_new(HRewriteSequence, 1);
+    rewrite->sequence.p_array = h_new(HParser *, s->len);
+    rewrite->sequence.len = s->len;
+    rewrite->owned_parsers = count ? h_new(HParser *, count) : NULL;
+    rewrite->owned_len = 0;
     for (size_t i = 0, j = 0; i < s->len; ++i) {
-        if (indices[j] == i) {
-            rewrite->p_array[i] = h_ignore(s->p_array[i]);
+        if (j < count && indices[j] == i) {
+            HParser *ignored = h_ignore__m(mm__, s->p_array[i]);
+            rewrite->sequence.p_array[i] = ignored;
+            rewrite->owned_parsers[rewrite->owned_len++] = ignored;
             ++j;
         } else {
-            rewrite->p_array[i] = s->p_array[i];
+            rewrite->sequence.p_array[i] = s->p_array[i];
         }
     }
 
-    return h_new_parser(mm__, &sequence_vt, rewrite);
+    return h_new_parser_with_free(mm__, &sequence_vt, rewrite, h_free_rewrite_sequence_env);
 }
 
 HParser *h_drop_from___a(void *args[]) { return h_drop_from___ma(h_default_allocator, args); }
@@ -237,20 +262,28 @@ HParser *h_drop_from___ma(HAllocator *mm__, void *args[]) {
     HParser *p = (HParser *)(args[0]);
     assert_message(p->vtable == &sequence_vt, "drop_from requires a sequence parser");
     HSequence *s = (HSequence *)(p->env);
-    HSequence *rewrite = h_new(HSequence, 1);
-    rewrite->p_array = h_new(HParser *, s->len);
-    rewrite->len = s->len;
+    size_t count = 0;
+    for (int *arg = args[1]; *arg >= 0; ++arg)
+        ++count;
+
+    HRewriteSequence *rewrite = h_new(HRewriteSequence, 1);
+    rewrite->sequence.p_array = h_new(HParser *, s->len);
+    rewrite->sequence.len = s->len;
+    rewrite->owned_parsers = count ? h_new(HParser *, count) : NULL;
+    rewrite->owned_len = 0;
 
     int i = 0, *argp = (int *)(args[1]);
-    while (*argp >= 0) {
-        if (i == *argp) {
-            rewrite->p_array[i] = h_ignore(s->p_array[i]);
+    while ((size_t)i < s->len) {
+        if (*argp >= 0 && i == *argp) {
+            HParser *ignored = h_ignore__m(mm__, s->p_array[i]);
+            rewrite->sequence.p_array[i] = ignored;
+            rewrite->owned_parsers[rewrite->owned_len++] = ignored;
             ++argp;
         } else {
-            rewrite->p_array[i] = s->p_array[i];
+            rewrite->sequence.p_array[i] = s->p_array[i];
         }
         ++i;
     }
 
-    return h_new_parser(mm__, &sequence_vt, rewrite);
+    return h_new_parser_with_free(mm__, &sequence_vt, rewrite, h_free_rewrite_sequence_env);
 }

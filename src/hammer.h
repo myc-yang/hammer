@@ -54,7 +54,11 @@ typedef enum HParserBackend_ {
     PB_INVALID = PB_MIN, /**< Have a backend that always fails to pass around "no such backend"
                             indications */
     PB_PACKRAT,
-    PB_MAX = PB_PACKRAT
+    PB_REGULAR,
+    PB_LL,
+    PB_LALR,
+    PB_GLR,
+    PB_MAX = PB_GLR
 } HParserBackend;
 
 typedef struct HParserBackendVTable_ HParserBackendVTable;
@@ -150,13 +154,13 @@ typedef struct HParsedToken_ {
         float flt;
         HCountedArray *seq; /**< a sequence of HParsedToken's */
         void *user;
-    };
+    } token_data;
 #else
     HTokenData token_data;
 #endif
     size_t index;
     size_t bit_length;
-    char bit_offset;
+    uint8_t bit_offset;
 } HParsedToken;
 
 /**
@@ -167,9 +171,80 @@ typedef struct HParsedToken_ {
  */
 typedef struct HParseResult_ {
     const HParsedToken *ast; /**< Abstract syntax tree */
-    int64_t bit_length;
+    size_t bit_length;
     HArena *arena; /**< Memory arena for the parse result */
 } HParseResult;
+
+/** Maximum number of distinct parsers recorded at the deepest input position
+ *  reached during a traced parse. See ::HParseError and h_parse_debug(). */
+#define H_PARSE_ERROR_MAX_PARSERS 16
+
+typedef enum HParseErrorKind_ {
+    H_PARSE_ERROR_NONE = 0,
+    H_PARSE_ERROR_PRIMITIVE_MISMATCH,
+    H_PARSE_ERROR_UNEXPECTED_EOF,
+    H_PARSE_ERROR_SEMANTIC_PREDICATE,
+    H_PARSE_ERROR_RANGE,
+    H_PARSE_ERROR_HIGHER_ORDER,
+    H_PARSE_ERROR_ACTION,
+    H_PARSE_ERROR_EXPLICIT_FAILURE,
+    H_PARSE_ERROR_XOR,
+    H_PARSE_ERROR_DIFFERENCE,
+    H_PARSE_ERROR_BUTNOT,
+    H_PARSE_ERROR_NO_VALUE,
+    H_PARSE_ERROR_REUSED_NAME,
+    /** The dispatch discriminator produced no selectable parser body. */
+    H_PARSE_ERROR_DISPATCH
+} HParseErrorKind;
+
+typedef struct HSourceLocation_ {
+    const char *file_name;
+    const char *function_name;
+    size_t line;
+    size_t column;
+} HSourceLocation;
+
+/**
+ * @struct HParseError
+ * @brief Structured furthest-failure information from a traced parse.
+ *
+ * Filled in by h_parse_debug() so callers can inspect where and why a parse got
+ * stuck programmatically, instead of scraping the textual trace from
+ * stderr/stdout. It records the originating failed parser, its location and
+ * kind, tied failures, and enclosing parser context. On a successful parse the
+ * structure is left empty.
+ */
+typedef struct HParseError_ {
+    size_t index;       /**< Start byte offset of the selected failure. */
+    size_t end_index;   /**< Exclusive end offset after any input was consumed. */
+    uint8_t actual;     /**< Input byte at that offset (0 at end of input). */
+    bool has_actual;    /**< Whether actual contains an input byte. */
+    uint8_t bit_offset; /**< Sub-byte bit position, for bitwise grammars. */
+    HParseErrorKind kind;
+    const char *parser;
+    /** Names of originating parsers tied at the selected failure position. */
+    const char *deepest_parsers[H_PARSE_ERROR_MAX_PARSERS];
+    size_t n_deepest; /**< Number of valid entries in deepest_parsers. */
+    const char *context[H_PARSE_ERROR_MAX_PARSERS];
+    size_t n_context;
+    const char *message; /**< User-defined failure message, or NULL. */
+    /** Owned copy of the selected parser's grammar-construction location. */
+    const HSourceLocation *source;
+} HParseError;
+
+/** Opaque, extensible diagnostic returned by h_parse_debug(). */
+typedef struct HParseDiagnostic_ HParseDiagnostic;
+
+typedef enum HParseExpectationKind_ {
+    H_PARSE_EXPECT_BYTE_RANGE = 0,
+    H_PARSE_EXPECT_END_OF_INPUT
+} HParseExpectationKind;
+
+typedef struct HParseExpectation_ {
+    HParseExpectationKind kind;
+    uint8_t lower; /**< Inclusive lower byte for H_PARSE_EXPECT_BYTE_RANGE. */
+    uint8_t upper; /**< Inclusive upper byte for H_PARSE_EXPECT_BYTE_RANGE. */
+} HParseExpectation;
 
 /**
  * TODO: document me.
@@ -182,6 +257,17 @@ typedef struct HCFChoice_ HCFChoice;
 typedef struct HRVMProg_ HRVMProg;
 typedef struct HParserVtable_ HParserVtable;
 
+typedef void (*HParserEnvFree)(HAllocator *mm__, void *);
+
+typedef struct HDesugarContext_ {
+    HArena *arena;
+    HAllocator allocator; /* arena-backed allocator */
+    HAllocator *owner_mm__;
+    size_t refs; /* parser references; valid on the group root */
+    struct HDesugarContext_ *group_parent;
+    struct HDesugarContext_ *group_next;
+    struct HDesugarContext_ *group_tail;
+} HDesugarContext;
 // TODO: Make this internal
 typedef struct HParser_ {
     const HParserVtable *vtable;
@@ -189,7 +275,14 @@ typedef struct HParser_ {
     HParserBackendVTable *backend_vtable;
     void *backend_data;
     void *env;
+    HParserEnvFree free_env;
     HCFChoice *desugared; /**< if the parser can be desugared, its desugared form */
+    HCFChoice *augmented;
+    HAllocator *owner_mm__;
+    HDesugarContext *desugar_ctx;
+    char *diagnostic_label;
+    char *diagnostic_message;
+    HSourceLocation *diagnostic_source;
 } HParser;
 
 typedef struct HSuspendedParser_ HSuspendedParser;
@@ -275,9 +368,9 @@ typedef struct backend_with_params {
  */
 
 typedef struct HParserTestcase_ {
-    unsigned char *input;
+    const unsigned char *input;
     size_t length;
-    char *output_unambiguous;
+    const char *output_unambiguous;
 } HParserTestcase;
 
 #ifdef SWIG
@@ -294,7 +387,7 @@ typedef struct HCaseResult_ {
         const char
             *actual_results; /**< on failure, filled in with the results of h_write_result_unamb */
         size_t parse_time;   /**< on success, filled in with time for a single parse, in nsec */
-    };
+    } timestamp;
 #else
     HResultTiming timestamp;
 #endif
@@ -424,6 +517,50 @@ HParseResult *h_parse__m(HAllocator *mm__, const HParser *parser, const uint8_t 
                          size_t length);
 
 /**
+ * @brief Like h_parse(), but collects a parse-scoped furthest-position
+ * diagnostic. Parsing behavior and return value are identical to h_parse().
+ *
+ * If @p diagnostic is non-NULL and the library is built with AST tracing
+ * (-DHAMMER_TRACE_AST=1), it receives an owned diagnostic object with structured
+ * failure information (see ::HParseError) and the complete execution trace.
+ * Pass NULL when no diagnostic object is needed. Without AST tracing, this
+ * behaves exactly like h_parse() and sets the caller's diagnostic pointer to
+ * NULL.
+ *
+ * @param parser Parser to use
+ * @param input Input data
+ * @param length Length of input data
+ * @param diagnostic Out-parameter for structured failure info, or NULL
+ * @param showDiagnostic on true, print the normalized diagnostic, condensed
+ * input trail, and bounded input context to stderr; on false, emit no text.
+ * @note On failure, legacy failure fields are available through
+ * h_parse_diagnostic_error(), while expected byte ranges and end-of-input are
+ * exposed by the expectation accessors. The complete backend execution trace is
+ * retained regardless of @p showDiagnostic. The caller must release a returned
+ * diagnostic object with h_parse_diagnostic_free().
+ */
+HParseResult *h_parse_debug(const HParser *parser, const uint8_t *input, size_t length,
+                            HParseDiagnostic **diagnostic, bool showDiagnostic);
+HParseResult *h_parse_debug__m(HAllocator *allocator, const HParser *parser, const uint8_t *input,
+                               size_t length, HParseDiagnostic **diagnostic, bool showDiagnostic);
+const HParseError *h_parse_diagnostic_error(const HParseDiagnostic *diagnostic);
+size_t h_parse_diagnostic_expected_count(const HParseDiagnostic *diagnostic);
+bool h_parse_diagnostic_expected(const HParseDiagnostic *diagnostic, size_t index,
+                                 HParseExpectation *expectation);
+/** Borrow the complete execution trace captured for this diagnostic. */
+const char *h_parse_diagnostic_execution_trace(const HParseDiagnostic *diagnostic, size_t *length);
+/** Write the complete retained execution trace to a caller-selected stream. */
+void h_parse_diagnostic_trace_fprint(FILE *stream, const HParseDiagnostic *diagnostic);
+void h_parse_diagnostic_fprint(FILE *stream, const HParseDiagnostic *diagnostic);
+/**
+ * Write a normalized diagnostic, its condensed input trail, and a bounded hex/
+ * ASCII view of the original input. The input is borrowed only for this call.
+ */
+void h_parse_diagnostic_fprint_with_input(FILE *stream, const HParseDiagnostic *diagnostic,
+                                          const uint8_t *input, size_t length);
+void h_parse_diagnostic_free(HParseDiagnostic *diagnostic);
+
+/**
  * @brief Initialize a parser for iteratively consuming an input stream in chunks.
  *
  * @param parser Parser to use
@@ -508,6 +645,20 @@ HParser *h_int_range__m(HAllocator *mm__, const HParser *p, const int64_t lower,
                         const int64_t upper);
 
 /**
+ * @brief Given a float parser, p, and two float bounds, lower and upper, returns a parser that
+ * parses a value within the range
+ *
+ * @param p float parser (h_float16(), h_float32(), h_float64())
+ * @param lower Lower bound (inclusive)
+ * @param upper Upper bound (inclusive)
+ * @return Result token type: Same as p's result type
+ * @note Consumes the same number of bits as p
+ */
+HParser *h_float_range(const HParser *p, const double lower, const double upper);
+HParser *h_float_range__m(HAllocator *mm__, const HParser *p, const double lower,
+                          const double upper);
+
+/**
  * @brief Returns a parser that parses the specified number of bits. sign == true if signed, false
  * if unsigned.
  *
@@ -515,6 +666,9 @@ HParser *h_int_range__m(HAllocator *mm__, const HParser *p, const int64_t lower,
  * @param sign true for signed, false for unsigned
  * @return Result token type: TT_SINT if sign == true, TT_UINT if sign == false
  * @note Consumes 'len' bits from the input stream
+ * @note Result values are represented as 64-bit integers. Use len <= 64 for a value-preserving
+ * parse; len >64 results in a NULL parser.
+ * Use h_bytes() or a sequence of smaller integer parsers for wider fields.
  */
 HParser *h_bits(size_t len, _Bool sign);
 HParser *h_bits__m(HAllocator *mm__, size_t len, _Bool sign);
@@ -603,6 +757,42 @@ HParser *h_uint8__m(HAllocator *mm__);
 
 /** @} */
 
+/**
+ * @defgroup floating point Parsers
+ * @{
+ */
+
+/**
+ * @brief Parse an IEEE-754 binary16 value, equivalent to a half-precision float
+ * @return Result token type: TT_FLOAT
+ */
+HParser *h_float16(void);
+/**
+ * @brief Parse an IEEE-754 binary32 value, equivalent to a single-precision or C float
+ * @return Result token type: TT_FLOAT
+ */
+HParser *h_float32(void);
+
+/**
+ * @brief Parse an IEEE-754 binary64 value, equivalent to a double-precision or C double
+ * @return Result token type: TT_DOUBLE
+ */
+HParser *h_float64(void);
+
+HParser *h_floating_point__m(HAllocator *mm__, size_t bits);
+/** @} */
+
+/**
+ * @brief Returns a parser that parses the specified number of bytes. The input does not have to be
+ * aligned to a byte boundary.
+ *
+ * @param len Number of bytes
+ * @return Result token type: TT_BYTES
+ * @note Consumes 'len * 8' bits from the input stream
+ */
+HParser *h_bytes(size_t len);
+HParser *h_bytes__m(HAllocator *mm__, size_t len);
+
 /** @defgroup combinators Parser Combinators
  * @{
  */
@@ -658,6 +848,62 @@ HParser *h_middle__m(HAllocator *mm__, const HParser *p, const HParser *x, const
  */
 HParser *h_action(const HParser *p, const HAction a, void *user_data);
 HParser *h_action__m(HAllocator *mm__, const HParser *p, const HAction a, void *user_data);
+
+typedef struct HActionEntry_ {
+    HParseResult res;
+    HParsedToken *placeholder;
+    HAction action;
+    void *user_data;
+    struct HActionEntry_ *next;
+} HActionEntry;
+
+typedef struct {
+    /*
+     * Reserved compatibility fields. Deferred entries are now kept in an
+     * arena-owned, branch-local parse plan; the collection's address is the
+     * stable identity used to match h_action_stash() with h_action_apply().
+     */
+    HActionEntry *head;
+    HActionEntry *tail;
+    size_t count;
+    HArena *arena;
+} HActionCollection;
+
+/**
+ * @brief Parse p and record an action for a matching h_action_apply() scope.
+ * @param p Parser to wrap
+ * @param a Action function
+ * @param user_data Context for action
+ * @param collection Stable identity shared with a matching h_action_apply parser.
+ * @return Result token type: any
+ */
+HParser *h_action_stash(const HParser *p, const HAction a, void *user_data,
+                        HActionCollection *collection);
+HParser *h_action_stash__m(HAllocator *mm__, const HParser *p, const HAction a, void *user_data,
+                           HActionCollection *collection);
+
+/**
+ * @brief Clear the collection's compatibility bookkeeping.
+ *
+ * Deferred entries are owned by the active parse plan and are released with
+ * its parse arena. Calling this function never frees arena storage.
+ */
+void h_action_collection_reset(HActionCollection *collection);
+
+/**
+ * @brief Parse p and run its matching stashed actions once the complete parse
+ * path succeeds.
+ *
+ * @param p An HParser containing h_action_stash parsers.
+ * @param collection Stable identity shared with matching h_action_stash parsers.
+ * @return Result token type: any.
+ * @note If collection is NULL, this still parses p but creates no apply scope.
+ * @note Deferred transformations are committed after the complete parse succeeds;
+ * ordinary actions and predicates executed during parsing see the placeholder's
+ * original value.
+ */
+HParser *h_action_apply(HParser *p, HActionCollection *collection);
+HParser *h_action_apply__m(HAllocator *mm__, HParser *p, HActionCollection *collection);
 
 /**
  * @brief Parse a single byte that is in the given charset. Always attempts to
@@ -744,6 +990,31 @@ HParser *h_choice__v(HParser *p, va_list ap);
 HParser *h_choice__a(void *args[]);
 HParser *h_choice__ma(HAllocator *mm__, void *args[]);
 
+typedef struct {
+    uint32_t opcode;
+    HParser *parser;
+} OpcodeMap;
+
+HParser *h_dispatch__m(HAllocator *mm__, HParser *discriminator, const OpcodeMap *map, size_t count,
+                       HParser *default_parser);
+HParser *h_dispatch__s(HParser *discriminator, const OpcodeMap *map, size_t count,
+                       HParser *default_parser);
+// public macro — zero runtime cost for compile-time arrays
+/**
+ * Create a parser that dispatches based on a discriminator value.
+ * @brief Given a dictionary-like struct of parsers linked with opcodes, apply the parser linked to
+ * the opcode read by the discriminator. Apply default parser if opcode doesn't match to a parser.
+ *
+ * @param discriminator Parser that produces an integer value that represent the opcode (e.g.,
+ * h_uint8())
+ * @param map An OpcodeMap struct that acts as a dictionary, linking each opcode to a parser.
+ * @param default_parser Parser that will be applied when opcode isn't in dictionary, may be NULL.
+ * @return TT_SEQUENCE of the discriminator parser result and the mapped or default parser result.
+ * @note Only works with Packrat.
+ */
+#define h_dispatch(discriminator, map, default_parser)                                             \
+    h_dispatch__s((discriminator), (map), (sizeof(map) / sizeof((map)[0])), default_parser)
+
 /**
  * @brief Given a null-terminated list of parsers, match a permutation phrase of these parsers, i.e.
  * match all parsers exactly once in any order.
@@ -778,7 +1049,7 @@ HParser *h_permutation__ma(HAllocator *mm__, void *args[]);
 /**
  * @brief Given two parsers, p1 and p2, this parser succeeds in the following cases:
  * - if p1 succeeds and p2 fails
- * - if both succeed but p1's result is as long as or longer than p2's
+ * - if both succeed and p2's result is shorter than p1's
  *
  * @param p1 First parser
  * @param p2 Second parser
@@ -790,7 +1061,7 @@ HParser *h_butnot__m(HAllocator *mm__, const HParser *p1, const HParser *p2);
 /**
  * @brief Given two parsers, p1 and p2, this parser succeeds in the following cases:
  * - if p1 succeeds and p2 fails
- * - if both succeed but p2's result is shorter than p1's
+ * - if both succeed and p1's result is as long as or longer than p2's
  *
  * @param p1 First parser
  * @param p2 Second parser
@@ -825,6 +1096,24 @@ HParser *h_many__m(HAllocator *mm__, const HParser *p);
  */
 HParser *h_many1(const HParser *p);
 HParser *h_many1__m(HAllocator *mm__, const HParser *p);
+
+/**
+ * @brief Given a parser, p, this parser succeeds for zero or more up to N repetitions of p.
+ * @param p Parser to repeat
+ * @param n Maximum number of repetitions
+ * @return Result token type: TT_SEQUENCE
+ */
+HParser *h_many_cap(const HParser *p, const size_t n);
+HParser *h_many_cap__m(HAllocator *mm__, const HParser *p, const size_t n);
+
+/**
+ * @brief Given a parser, p, this parser succeeds for one or more up to N repetitions of p.
+ * @param p Parser to repeat
+ * @param n Maximum number of repetitions
+ * @return Result token type: TT_SEQUENCE
+ */
+HParser *h_many1_cap(const HParser *p, const size_t n);
+HParser *h_many1_cap__m(HAllocator *mm__, const HParser *p, const size_t n);
 
 /**
  * @brief Given a parser, p, this parser succeeds for exactly N repetitions of p.
@@ -990,7 +1279,8 @@ HParser *h_with_endianness__m(HAllocator *mm__, char endianness, const HParser *
  * parse failure)
  *
  * @param p Parser whose result to stash
- * @param name Name to stash the result under (must be unique)
+ * @param name NUL-terminated name to stash the result under (must be unique).
+ * Names are compared by string contents and copied by this function.
  * @return Result token type: p's token type if name was not already in the symbol table.
  */
 HParser *h_put_value(const HParser *p, const char *name);
@@ -1000,7 +1290,8 @@ HParser *h_put_value__m(HAllocator *mm__, const HParser *p, const char *name);
  * @brief The 'h_get_value' combinator retrieves a named HParseResult that was previously stashed in
  * the parse state.
  *
- * @param name Name to retrieve
+ * @param name NUL-terminated name to retrieve. Names are compared by string
+ * contents and copied by this function.
  * @return Result token type: whatever the stashed HParseResult is, if present. If absent, NULL (and
  * thus parse failure).
  */
@@ -1008,10 +1299,20 @@ HParser *h_get_value(const char *name);
 HParser *h_get_value__m(HAllocator *mm__, const char *name);
 
 /**
+ * @brief prints the entire abstract syntax tree with proper indexing
+ *
+ * @param stream Output stream
+ * @param tok Token to format
+ * @param indent Initial indentation level
+ */
+void h_pprint_ast_indexed(FILE *stream, const HParsedToken *token, size_t indent);
+
+/**
  * @brief The 'h_free_value' combinator retrieves a named HParseResult that was previously stashed
  * in the parse state and deletes it from the symbol table
  *
- * @param name Name to retrieve and delete
+ * @param name NUL-terminated name to retrieve and delete. Names are compared
+ * by string contents and copied by this function.
  * @return Result token type: whatever the stashed HParseResult is, if present. If absent, NULL (and
  * thus parse failure).
  */
@@ -1067,6 +1368,7 @@ HParser *h_tell__m(HAllocator *mm__);
  * @param result Result to free
  */
 void h_parse_result_free(HParseResult *result);
+void h_parse_error_free(HParseError *error);
 void h_parse_result_free__m(HAllocator *mm__, HParseResult *result);
 
 /** @} */
@@ -1247,9 +1549,9 @@ void h_benchmark_report(FILE *stream, HBenchmarkResults *results);
 
 struct result_buf;
 
-bool h_append_buf(struct result_buf *buf, const char *input, int len);
+bool h_append_buf(struct result_buf *buf, const char *input, size_t len);
 bool h_append_buf_c(struct result_buf *buf, char v);
-bool h_append_buf_formatted(struct result_buf *buf, char *format, ...);
+bool h_append_buf_formatted(struct result_buf *buf, const char *format, ...);
 
 /** @} */
 
@@ -1275,6 +1577,119 @@ const char *h_get_token_type_name(HTokenType token_type);
 
 /** Make an allocator that draws from the given memory area. */
 HAllocator *h_sloballoc(void *mem, size_t size);
+
+typedef struct HParserGraph_ HParserGraph;
+
+/**
+ * @brief Begin collecting parser nodes created by combinators on this thread.
+ *
+ * @return A graph that owns subsequently created parser nodes, or NULL when
+ * allocation fails.
+ * @note Call h_parser_graph_end() before parsing with the graph's root parser.
+ */
+HParserGraph *h_parser_graph_begin(void);
+
+/**
+ * @brief Stop collecting parser nodes into a graph.
+ *
+ * @param graph The graph returned by h_parser_graph_begin().
+ * @note Graph collection is scoped per thread and may be nested. Call this
+ *       on the construction thread before handing the graph to another
+ *       thread for destruction.
+ */
+void h_parser_graph_end(HParserGraph *graph);
+
+/**
+ * @brief Free every parser node collected by a graph.
+ *
+ * @param graph The graph returned by h_parser_graph_begin().
+ * @note Nodes are released in reverse construction order, so parent parsers
+ * are freed before their children. Shared nodes are collected once. Do not
+ * free collected nodes separately. The graph must have been ended on its
+ * construction thread before it is freed on another thread.
+ */
+void h_parser_graph_free(HParserGraph *graph);
+
+/**
+ * @brief Free parser p from the heap
+ *
+ * @param p Parser to free.
+ * @note if the parser has arguments of other parsers, those need to be freed seperately.
+ */
+void h_parser_free(HParser *p);
+
+/**
+ * @brief Free parser p from the heap
+ * @param mm__ Allocator that the parser was created in.
+ * @param p Parser to free.
+ */
+void h_parser_free__m(HAllocator *mm__, HParser *p);
+
+/** @defgroup error labeling
+ * @{
+ */
+
+/**
+ * @brief Give a parser a stable user-defined name in debug diagnostics.
+ *
+ * @param parser the HParser to modify.
+ * @param label copied and replaces the backend-derived parser name whenever
+ * this parser is selected as the source of a failure. Pass NULL to clear it.
+ * @note This annotation does not affect parsing behavior.
+ *
+ * @return true on success, false for an invalid parser or allocation failure.
+ */
+bool h_parser_set_label(HParser *parser, const char *label);
+
+/**
+ * @brief Override the formatted debug message when this parser fails.
+ *
+ * @param parser the HParser to modify.
+ * @param parser the parser The message is copied. The underlying HParseErrorKind and structured
+ * byte expectations remain available to callers. Pass NULL to clear it.
+ * @note This annotation does not affect parsing behavior.
+ *
+ * @return true on success, false for an invalid parser or allocation failure.
+ */
+bool h_parser_set_error_message(HParser *parser, const char *message);
+
+/**
+ * @brief Wrap one parser occurrence with a stable label and grammar-construction location.
+ *
+ * @param parser the HParser to wrap. The child parser is not modified.
+ * @param label replaces the backend-derived parser name whenever
+ * this parser is selected as the source of a failure, NULL preserves existing label.
+ * @param source provides the location of the parser whenever
+ * this parser is selected as the source of a failure.
+ * @note This annotation does not affect parsing behavior.
+ * @note The wrapper does not take ownership of parser; parser must remain alive while the wrapper
+ * is compiled or parsed.
+ *
+ * @return a new context-wrapper parser on success, or NULL for invalid arguments or allocation
+ * failure. The wrapper and child remain independently owned and must each be freed by their owner.
+ */
+HParser *h_with_context(HParser *parser, const char *label, const HSourceLocation *source);
+
+static inline HParser *h_with_context_at(HParser *parser, const char *label, const char *file_name,
+                                         const char *function_name, size_t line, size_t column) {
+    HSourceLocation source = {file_name, function_name, line, column};
+    return h_with_context(parser, label, &source);
+}
+
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_COLUMN)
+#define H_CONTEXT_COLUMN() __builtin_COLUMN()
+#endif
+#endif
+
+#ifndef H_CONTEXT_COLUMN
+#define H_CONTEXT_COLUMN() 0
+#endif
+
+#define H_CONTEXT(parser, label)                                                                   \
+    h_with_context_at((parser), (label), __FILE__, __func__, __LINE__, H_CONTEXT_COLUMN())
+
+/** @} */
 
 #ifdef __cplusplus
 }

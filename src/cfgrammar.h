@@ -3,6 +3,13 @@
 
 #include "internal.h"
 
+typedef struct HCFStartWrapper_ {
+    HCFChoice choice;
+    HCFSequence *alternatives[2];
+    HCFSequence sequence;
+    HCFChoice *items[2];
+} HCFStartWrapper;
+
 typedef struct HCFGrammar_ {
     HCFChoice *start;   // start symbol (nonterminal)
     HHashSet *nts;      // HCFChoices, each representing the alternative
@@ -17,6 +24,7 @@ typedef struct HCFGrammar_ {
     // these are only members of HCFGrammar because they need a pointer to arena.
     const struct HStringMap_ *singleton_epsilon;
     const struct HStringMap_ *singleton_end;
+    HCFStartWrapper *owned_start;
 } HCFGrammar;
 
 /* Representing input characters (bytes) in HHashTables.
@@ -96,11 +104,11 @@ const HStringMap *h_follow(size_t k, HCFGrammar *g, const HCFChoice *x);
 HStringMap *h_predict(size_t k, HCFGrammar *g, const HCFChoice *A, const HCFSequence *rhs);
 
 /* Pretty-printers for grammars and associated data. */
-void h_pprint_grammar(FILE *file, const HCFGrammar *g, int indent);
+void h_pprint_grammar(FILE *file, const HCFGrammar *g, size_t indent);
 void h_pprint_sequence(FILE *f, const HCFGrammar *g, const HCFSequence *seq);
 void h_pprint_symbol(FILE *f, const HCFGrammar *g, const HCFChoice *x);
-void h_pprint_symbolset(FILE *file, const HCFGrammar *g, const HHashSet *set, int indent);
-void h_pprint_stringset(FILE *file, const HStringMap *set, int indent);
+void h_pprint_symbolset(FILE *file, const HCFGrammar *g, const HHashSet *set, size_t indent);
+void h_pprint_stringset(FILE *file, const HStringMap *set, size_t indent);
 void h_pprint_stringmap(FILE *file, char sep, void (*valprint)(FILE *f, void *env, void *val),
                         void *env, const HStringMap *map);
 void h_pprint_char(FILE *file, uint8_t c);

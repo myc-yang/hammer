@@ -2,11 +2,22 @@
 #include "parser_internal.h"
 
 #include <assert.h>
+#include <stdint.h>
 
 typedef struct {
     uint8_t *str;
     size_t len;
 } HToken;
+
+static void free_env(HAllocator *allocator, void *environment) {
+    HToken *token = environment;
+
+    if (token == NULL)
+        return;
+
+    allocator->free(allocator, (void *)token->str);
+    allocator->free(allocator, token);
+}
 
 static HParseResult *parse_token(void *env, HParseState *state) {
     HToken *t = (HToken *)env;
@@ -18,8 +29,8 @@ static HParseResult *parse_token(void *env, HParseState *state) {
     }
     HParsedToken *tok = a_new(HParsedToken, 1);
     tok->token_type = TT_BYTES;
-    tok->bytes.token = t->str;
-    tok->bytes.len = t->len;
+    tok->token_data.bytes.token = t->str;
+    tok->token_data.bytes.len = t->len;
     tok->index = 0;
     tok->bit_offset = 0;
     tok->bit_length = 0;
@@ -30,7 +41,7 @@ static HParsedToken *reshape_token(const HParseResult *p, void *user_data) {
     // fetch sequence of uints from p
     assert(p->ast);
     assert(p->ast->token_type == TT_SEQUENCE);
-    HCountedArray *seq = p->ast->seq;
+    HCountedArray *seq = p->ast->token_data.seq;
 
     // extract byte string
     uint8_t *arr = h_arena_malloc(p->arena, seq->used);
@@ -38,14 +49,15 @@ static HParsedToken *reshape_token(const HParseResult *p, void *user_data) {
     for (i = 0; i < seq->used; i++) {
         HParsedToken *t = seq->elements[i];
         assert(t->token_type == TT_UINT);
-        arr[i] = t->uint;
+        assert(t->token_data.uint <= UINT8_MAX);
+        arr[i] = (uint8_t)t->token_data.uint;
     }
 
     // create result token
     HParsedToken *tok = h_arena_malloc(p->arena, sizeof(HParsedToken));
     tok->token_type = TT_BYTES;
-    tok->bytes.len = seq->used;
-    tok->bytes.token = arr;
+    tok->token_data.bytes.len = seq->used;
+    tok->token_data.bytes.token = arr;
 
     return tok;
 }
@@ -64,11 +76,37 @@ static void desugar_token(HAllocator *mm__, HCFStack *stk__, void *env) {
     HCFS_END_CHOICE();
 }
 
+static bool token_ctrvm(HRVMProg *prog, void *env) {
+    HToken *t = (HToken *)env;
+    h_rvm_insert_insn(prog, RVM_PUSH, 0);
+    for (size_t i = 0; i < t->len; ++i) {
+        h_rvm_insert_insn(
+            prog, RVM_MATCH,
+            (uint16_t)((uint16_t)(uint8_t)t->str[i] | ((uint16_t)(uint8_t)t->str[i] << 8)));
+        h_rvm_insert_insn(prog, RVM_STEP, 0);
+    }
+    h_rvm_insert_insn(prog, RVM_CAPTURE, 0);
+    return true;
+}
+
+static size_t trace_expectations_token(void *env, size_t consumed, bool overrun, bool expected[256],
+                                       bool *expected_eof) {
+    (void)expected_eof;
+    HToken *token = env;
+    size_t offset = overrun ? consumed : (consumed > 0 ? consumed - 1 : 0);
+    if (offset < token->len)
+        expected[token->str[offset]] = true;
+    return offset;
+}
+
 const HParserVtable token_vt = {
+    .name = "h_token",
     .parse = parse_token,
     .isValidRegular = h_true,
     .isValidCF = h_true,
+    .compile_to_rvm = token_ctrvm,
     .desugar = desugar_token,
+    .trace_expectations = trace_expectations_token,
     .higher = false,
 };
 
@@ -80,5 +118,5 @@ HParser *h_token__m(HAllocator *mm__, const uint8_t *str, const size_t len) {
     uint8_t *str_cpy = h_new(uint8_t, len);
     memcpy(str_cpy, str, len);
     t->str = str_cpy, t->len = len;
-    return h_new_parser(mm__, &token_vt, t);
+    return h_new_parser_with_free(mm__, &token_vt, t, free_env);
 }
