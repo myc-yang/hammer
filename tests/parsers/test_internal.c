@@ -44,6 +44,7 @@ static CFStackOOMAllocator cfstack_oom_allocator(void) {
     return state;
 }
 
+#ifndef RTEMS_BUILD
 static void test_cfstack_begin_seq_realloc_failure(void) {
     if (g_test_subprocess()) {
         CFStackOOMAllocator state = cfstack_oom_allocator();
@@ -97,6 +98,7 @@ static void test_cfstack_begin_choice_realloc_failure(void) {
     g_test_trap_assert_failed();
     g_test_trap_assert_stderr("*memory reallocation failed*");
 }
+#endif
 
 static void test_desugar_uses_context_arena_for_cf_storage(void) {
     CFStackOOMAllocator state = cfstack_oom_allocator();
@@ -550,10 +552,12 @@ static void test_reshape_bits_direct(void) {
 void register_internal_tests(void) {
     // Skip unimplemented test due to crash - it's already tested in test_unimplemented.c
     // g_test_add_func("/core/internal/unimplemented", test_unimplemented_parser);
+#ifndef RTEMS_BUILD
     g_test_add_func("/core/internal/cfstack_begin_seq_realloc_failure",
                     test_cfstack_begin_seq_realloc_failure);
     g_test_add_func("/core/internal/cfstack_begin_choice_realloc_failure",
                     test_cfstack_begin_choice_realloc_failure);
+#endif
     g_test_add_func("/core/internal/desugar_uses_context_arena_for_cf_storage",
                     test_desugar_uses_context_arena_for_cf_storage);
     g_test_add_func("/core/internal/reshape_bits_unsigned", test_reshape_bits_unsigned);

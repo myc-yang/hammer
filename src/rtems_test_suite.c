@@ -51,7 +51,9 @@ int h_test_run_all(void){
             printf(" PASS: %s\n", h_test_registry[i].name);
             h_test_pass_count++;
         }
+#ifdef STATIC_BUILD
         h_parse_pool_reset();
+#endif
     }
 
     printf("\nRESULTS\n");

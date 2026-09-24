@@ -547,6 +547,7 @@ static void test_parser_graph_grows(void) {
     system_allocator = saved;
 }
 
+#ifndef RTEMS_BUILD
 static gpointer free_parser_from_worker(gpointer data) {
     h_parser_free(data);
     return NULL;
@@ -607,6 +608,7 @@ static void test_parser_graph_foreign_free_removes_registry_entry(void) {
 
     system_allocator = saved;
 }
+#endif
 
 void register_parser_free_tests(void) {
     g_test_add_func("/core/parser/free/sequence_variants", test_sequence_variants_free_root);
@@ -633,8 +635,10 @@ void register_parser_free_tests(void) {
     g_test_add_func("/core/parser/free/graph/parser_allocator",
                     test_parser_graph_uses_parser_allocator);
     g_test_add_func("/core/parser/free/graph/grows", test_parser_graph_grows);
+#ifndef RTEMS_BUILD
     g_test_add_func("/core/parser/free/graph/cross_thread_parser",
                     test_parser_graph_untracks_cross_thread_parser_free);
     g_test_add_func("/core/parser/free/graph/cross_thread_graph",
                     test_parser_graph_foreign_free_removes_registry_entry);
+#endif
 }

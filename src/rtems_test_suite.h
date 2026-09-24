@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <inttypes.h>
 
@@ -19,7 +20,7 @@
 /*
  * Test Registry
  */
-#define MAX_TESTS 512
+#define MAX_TESTS 1024
 
 /** 
  * @struct HTestEntry
@@ -51,7 +52,15 @@ int h_test_run_all(void);
  */
 #define g_test_add_func(name, fn) do { h_test_add((name), (fn)); } while(0)
 
-#define g_test_add_data_func(name, data, func) h_test_add_data((name), (void(*)(const void*))(func), (const void*)(data))
+/*
+ * Every data-driven RTEMS parser test supplies an HParserBackend value.  The
+ * port supports only packrat, so skip registrations for unsupported backends.
+ */
+#define g_test_add_data_func(name, data, func) \
+    do { \
+        if ((HParserBackend)GPOINTER_TO_INT(data) == PB_PACKRAT) \
+            h_test_add_data((name), (void (*)(const void *))(func), (const void *)(data)); \
+    } while (0)
 
 void h_test_add_data(const char *name, void (*func)(const void*), const void *data);
 
@@ -118,6 +127,16 @@ void h_test_add_data(const char *name, void (*func)(const void*), const void *da
 #define g_check_cmpdouble(n1, op, n2)  g_check_inttype("%g", double, n1, op, n2)
 
 #define g_assert_true(expr) if(!expr) g_test_fail();
+#define g_assert_null(expr) g_check_cmp_ptr((expr), ==, NULL)
+#define g_assert_nonnull(expr) g_check_cmp_ptr((expr), !=, NULL)
+#define g_assert_cmpint(n1, op, n2) g_check_cmp_int((n1), op, (n2))
+#define g_assert_cmpuint(n1, op, n2) g_check_cmp_uint64((uint64_t)(n1), op, (uint64_t)(n2))
+#define g_assert_cmpfloat(n1, op, n2) g_check_cmpfloat((n1), op, (n2))
+
+/* GLib allocation helpers used by portable tests. */
+#define g_malloc(size) malloc(size)
+#define g_malloc0(size) calloc(1, (size))
+#define g_free(ptr) free(ptr)
 
 /**
  * pointer and byte comparison
@@ -180,7 +199,7 @@ void h_test_add_data(const char *name, void (*func)(const void*), const void *da
         const char *_s1 = (n1); \
         const char *_s2 = (n2); \
         if(_s1 && _s2){ \
-            g_check_string(_s1, ==, _s2); \
+            g_check_string(_s1, op, _s2); \
         } else if(_s1 != _s2){ \
             printf(" [FAIL] %s:%d NULL mismatch: %s == %s\n", \
                     __FILE__, __LINE__, #n1, #n2); \

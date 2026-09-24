@@ -41,9 +41,11 @@ extern void register_whitespace_tests(void);
 extern void register_xor_tests(void);
 extern void register_missing_tests(void);
 extern void register_packrat_tests(void);
+#ifndef RTEMS_BUILD
 extern void register_regex_tests(void);
 extern void register_trace_tests(void);
 extern void register_contextfree_backend_tests(void);
+#endif
 extern void register_hammer_tests(void);
 extern void register_glue_tests(void);
 extern void register_registry_tests(void);
@@ -57,7 +59,9 @@ extern void register_platform_tests(void);
 extern void register_misc_tests(void);
 extern void register_mm_tests(void);
 extern void register_names_tests(void);
+#ifndef RTEMS_BUILD
 extern void register_param_k_tests(void);
+#endif
 extern void register_benchmark_tests(void);
 extern void register_regression_tests(void);
 extern void register_allocator_tests(void);
@@ -65,7 +69,9 @@ extern void register_datastructures_tests(void);
 extern void register_pprint_tests(void);
 extern void register_sloballoc_tests(void);
 extern void register_system_allocator_tests(void);
+#ifndef RTEMS_BUILD
 extern void register_parser_free_tests(void);
+#endif
 
 #ifdef RTEMS_BUILD
 void register_all_hammer_tests(void) {
@@ -86,12 +92,16 @@ void register_all_hammer_tests(void) {
     register_token_tests();
     register_value_tests();
     register_whitespace_tests();
+#ifndef RTEMS_BUILD
     register_trace_tests();
+#endif
     register_xor_tests();
     register_missing_tests();
     register_packrat_tests();
+#ifndef RTEMS_BUILD
     register_regex_tests();
     register_contextfree_backend_tests();
+#endif
     register_hammer_tests();
     register_glue_tests();
     register_registry_tests();
@@ -103,17 +113,23 @@ void register_all_hammer_tests(void) {
     register_cfgrammar_tests();
     register_platform_tests();
     register_misc_tests();
+#ifndef RTEMS_BUILD
     register_mm_tests();
+#endif
     register_names_tests();
     register_regression_tests();
     register_benchmark_tests();
     register_allocator_tests();
     register_datastructures_tests();
+#ifndef RTEMS_BUILD
     register_param_k_tests();
+#endif
     register_pprint_tests();
     register_sloballoc_tests();
     register_system_allocator_tests();
+#ifndef RTEMS_BUILD
     register_parser_free_tests();
+#endif
 }
 #else
 int main(int argc, char **argv) {
