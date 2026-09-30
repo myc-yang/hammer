@@ -1611,7 +1611,7 @@ void h_parser_graph_end(HParserGraph *graph);
 void h_parser_graph_free(HParserGraph *graph);
 
 /**
- * @brief Free parser p from the heap
+ * @brief Free parser p with the allocator that created it.
  *
  * @param p Parser to free.
  * @note if the parser has arguments of other parsers, those need to be freed seperately.
@@ -1619,7 +1619,7 @@ void h_parser_graph_free(HParserGraph *graph);
 void h_parser_free(HParser *p);
 
 /**
- * @brief Free parser p from the heap
+ * @brief Free parser p with an explicit allocator.
  * @param mm__ Allocator that the parser was created in.
  * @param p Parser to free.
  */

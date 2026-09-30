@@ -1082,7 +1082,7 @@ void h_parser_free(HParser *parser) {
     if (parser == NULL)
         return;
 
-    h_parser_free__m(&system_allocator, parser);
+    h_parser_free__m(parser->owner_mm__, parser);
 
     return;
 }

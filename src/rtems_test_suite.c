@@ -54,7 +54,16 @@ int h_test_run_all(void) {
             h_test_pass_count++;
         }
 #ifdef STATIC_BUILD
-        h_parse_pool_reset();
+        /*
+         * Each test owns its grammar and parse result.  Static allocators are
+         * bump allocators, so h_parser_free cannot reclaim the grammar pool;
+         * reinitialize both pools before the next independent test.
+         *
+         * This is deliberately test-harness-only.  Production static users
+         * build their grammar once and reset only the parse pool after a
+         * parse.
+         */
+        h_static_alloc_init();
 #endif
     }
 

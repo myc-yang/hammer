@@ -180,16 +180,16 @@ clean:
 # INSTALL
 
 install:
-	mkdir -p ~/install/lib ~/install/include
-	cp $(TARGET) ~/install/lib/
-	cp $(HAMMER_SRC)/hammer.h ~/install/include/
-	cp $(HAMMER_SRC)/glue.h ~/install/include/
-	cp $(HAMMER_SRC)/compiler_specifics.h ~/install/include/
-	cp $(HAMMER_SRC)/allocator.h ~/install/include/
-	cp $(HAMMER_SRC)/static_alloc.h ~/install/include/
-	cp $(HAMMER_SRC)/rtems_test_suite.h ~/install/include/
-	cp $(HAMMER_SRC)/internal.h ~/install/include/
-	cp $(HAMMER_SRC)/platform.h ~/install/include/
+	mkdir -p $(INSTALL_PREFIX)/lib $(INSTALL_PREFIX)/include
+	cp $(TARGET) $(INSTALL_PREFIX)/lib/
+	cp $(HAMMER_SRC)/hammer.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/glue.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/compiler_specifics.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/allocator.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/static_alloc.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/rtems_test_suite.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/internal.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/platform.h $(INSTALL_PREFIX)/include/
 
 install-tests: install
 	mkdir -p $(INSTALL_PREFIX)/tests
