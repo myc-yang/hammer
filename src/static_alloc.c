@@ -53,17 +53,29 @@ static inline size_t sa_round_up(size_t n) {
 
 static void *sa_alloc(HAllocator *mm, size_t size) {
     StaticAllocator *a = (StaticAllocator *)mm;
+    size_t free_space;
 
     if (size == 0)
         size = 1;
+
+    /*
+     * Do not let alignment rounding wrap a near-SIZE_MAX request to a small
+     * allocation.  The capacity check below relies on size being exact.
+     */
+    if (size > SIZE_MAX - (SA_ALIGN - 1)) {
+        SA_HALT("%s pool request too large: %lu", a->name, (unsigned long)size);
+        return NULL;
+    }
     size = sa_round_up(size);
 
-    if (a->offset + size > a->size) {
+    /* Subtraction avoids overflow in offset + size. */
+    free_space = a->offset <= a->size ? a->size - a->offset : 0;
+    if (a->offset > a->size || size > free_space) {
         // No heap to fall back to. Halt rather than corrupt
         SA_HALT("%s pool exhausted: need %lu, %lu free (size=%lu)",
                 a->name,
                 (unsigned long)size,
-                (unsigned long)(a->size - a->offset),
+                (unsigned long)free_space,
                 (unsigned long)a->size);
         return NULL; 
     }

@@ -81,6 +81,7 @@ misc_hammer_parts = [
     "hammer.c",
     "pprint.c",
     "registry.c",
+    "static_alloc.c",
     "system_allocator.c",
     "sloballoc.c",
     "trace.c",

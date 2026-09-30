@@ -71,6 +71,7 @@ extern void register_sloballoc_tests(void);
 extern void register_system_allocator_tests(void);
 #ifndef RTEMS_BUILD
 extern void register_parser_free_tests(void);
+extern void register_static_alloc_tests(void);
 #endif
 
 #ifdef RTEMS_BUILD
@@ -129,6 +130,7 @@ void register_all_hammer_tests(void) {
     register_system_allocator_tests();
 #ifndef RTEMS_BUILD
     register_parser_free_tests();
+    register_static_alloc_tests();
 #endif
 }
 #else
@@ -181,6 +183,7 @@ int main(int argc, char **argv) {
     register_sloballoc_tests();
     register_system_allocator_tests();
     register_parser_free_tests();
+    register_static_alloc_tests();
 
     g_test_run();
 }
