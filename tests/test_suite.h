@@ -28,6 +28,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#ifndef RTEMS_BUILD
 // Equivalent to g_assert_*, but not using g_assert...
 #define g_check_inttype(fmt, typ, n1, op, n2)                                                      \
     do {                                                                                           \
@@ -92,6 +93,7 @@
             /* else both are NULL, succeed */                                                      \
         }                                                                                          \
     } while (0)
+#endif
 
 #define g_check_regular(lang)                                                                      \
     do {                                                                                           \
@@ -148,8 +150,10 @@
         }                                                                                          \
     } while (0)
 
+#ifndef RTEMS_BUILD
 #define g_check_parse_failed(p, be, input, len)                                                    \
     g_check_parse_failed__m(&system_allocator, p, be, input, len)
+#endif
 
 #define g_check_parse_failed_no_compile__m(mm__, parser, input, inp_len)                           \
     do {                                                                                           \
@@ -184,8 +188,10 @@
         }                                                                                          \
     } while (0)
 
+#ifndef RTEMS_BUILD
 #define g_check_parse_ok(p, be, input, len)                                                        \
     g_check_parse_ok__m(&system_allocator, p, be, input, len)
+#endif
 
 #define g_check_parse_ok_no_compile__m(mm__, parser, input, inp_len)                               \
     do {                                                                                           \
@@ -224,8 +230,10 @@
         }                                                                                          \
     } while (0)
 
+#ifndef RTEMS_BUILD
 #define g_check_parse_match(parser, backend, input, inp_len, result)                               \
     g_check_parse_match__m(&system_allocator, parser, backend, input, inp_len, result)
+#endif
 
 #define g_check_parse_match_no_compile__m(mm__, parser, input, inp_len, result)                    \
     do {                                                                                           \
@@ -513,6 +521,7 @@
 #define g_check_followset_absent(k, grammar, parser, str)                                          \
     g_check_stringmap_absent(h_follow(k, grammar, h_desugar(&system_allocator, NULL, parser)), str)
 
+#ifndef RTEMS_BUILD
 #define g_check_cmp_int(n1, op, n2) g_check_inttype("%d", int, n1, op, n2)
 #define g_check_cmp_int32(n1, op, n2) g_check_inttype("%d", int32_t, n1, op, n2)
 #define g_check_cmp_int64(n1, op, n2) g_check_inttype("%" PRId64, int64_t, n1, op, n2)
@@ -521,5 +530,6 @@
 #define g_check_cmp_size(n1, op, n2) g_check_inttype("%zu", size_t, n1, op, n2)
 #define g_check_cmpfloat(n1, op, n2) g_check_inttype("%g", float, n1, op, n2)
 #define g_check_cmpdouble(n1, op, n2) g_check_inttype("%g", double, n1, op, n2)
+#endif
 
 #endif // #ifndef HAMMER_TEST_SUITE__H

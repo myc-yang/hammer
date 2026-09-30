@@ -193,7 +193,7 @@ void h_test_add_data(const char *name, void (*func)(const void *), const void *d
         }                                                                                          \
     } while (0)
 
-#define g_check_maybe_string_eq(n1, op, n2)                                                        \
+#define g_check_maybe_string_eq(n1, n2)                                                            \
     do {                                                                                           \
         const char *_s1 = (n1);                                                                    \
         const char *_s2 = (n2);                                                                    \
@@ -224,7 +224,7 @@ void h_test_add_data(const char *name, void (*func)(const void *), const void *d
  */
 #define g_check_parse_ok(parser, backend, input, len)                                              \
     do {                                                                                           \
-        if (h_compile((parser), (backend), NULL)) {                                                \
+        if (h_compile((HParser *)(parser), (backend), NULL)) {                                    \
             printf(" [FAIL] %s:%d Compile failed\n", __FILE__, __LINE__);                          \
             fflush(stdout);                                                                        \
             g_test_fail();                                                                         \
@@ -242,7 +242,7 @@ void h_test_add_data(const char *name, void (*func)(const void *), const void *d
 
 #define g_check_parse_failed(parser, backend, input, len)                                          \
     do {                                                                                           \
-        if (h_compile((parser), (backend), NULL) != 0) {                                           \
+        if (h_compile((HParser *)(parser), (backend), NULL) != 0) {                               \
             printf(" [FAIL] %s:%d Compile failed\n", __FILE__, __LINE__);                          \
             fflush(stdout);                                                                        \
             g_test_fail();                                                                         \
@@ -259,7 +259,7 @@ void h_test_add_data(const char *name, void (*func)(const void *), const void *d
 
 #define g_check_parse_match(parser, backend, input, len, expected)                                 \
     do {                                                                                           \
-        if (h_compile((parser), (backend), NULL) != 0) {                                           \
+        if (h_compile((HParser *)(parser), (backend), NULL) != 0) {                               \
             printf(" [FAIL] %s:%d Compile failed\n", __FILE__, __LINE__);                          \
             fflush(stdout);                                                                        \
             g_test_fail();                                                                         \
@@ -271,7 +271,7 @@ void h_test_add_data(const char *name, void (*func)(const void *), const void *d
             fflush(stdout);                                                                        \
             g_test_fail();                                                                         \
         } else {                                                                                   \
-            char *_s = h_write_result_unamb(_r);                                                   \
+            char *_s = h_write_result_unamb(_r->ast);                                              \
             g_check_string(_s, ==, (expected));                                                    \
             (&system_allocator)->free(&system_allocator, _s);                                      \
             h_parse_result_free(_r);                                                               \

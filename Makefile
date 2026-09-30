@@ -53,6 +53,10 @@ CFLAGS = \
     -Ishim \
 	-I$(HAMMER_SRC)
 
+# RTEMS compiles all test sources even when some test registrations are
+# intentionally omitted for unsupported features.
+TEST_CFLAGS = $(CFLAGS) -Wno-unused-function
+
 # Source files
 
 SRCS = \
@@ -131,7 +135,7 @@ TEST_TARGET = $(BUILD_DIR)/libhammer_tests.a
 
 $(TEST_BUILD_DIR)/%.o: $(TEST_DIR)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) -I$(TEST_DIR) $(CFLAGS) -c $< -o $@
+	$(CC) -I$(TEST_DIR) $(TEST_CFLAGS) -c $< -o $@
 
 $(TEST_TARGET): $(TEST_OBJS)
 	$(AR) rcs $@ $^
