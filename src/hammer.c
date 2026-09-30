@@ -43,10 +43,10 @@ static HParserBackendVTable *backends[PB_MAX + 1] = {
     &h__missing_backend_vtable, /* PB_LALR is unsupported on RTEMS */
     &h__missing_backend_vtable  /* PB_GLR is unsupported on RTEMS */
 #else
-    &h__regex_backend_vtable,   /* For PB_REGULAR */
-    &h__llk_backend_vtable,     /* For PB_LL */
-    &h__lalr_backend_vtable,    /* For PB_LALR */
-    &h__glr_backend_vtable      /* For PB_GLR */
+    &h__regex_backend_vtable, /* For PB_REGULAR */
+    &h__llk_backend_vtable,   /* For PB_LL */
+    &h__lalr_backend_vtable,  /* For PB_LALR */
+    &h__glr_backend_vtable    /* For PB_GLR */
 #endif
 };
 
@@ -252,7 +252,7 @@ static char *h_get_string_for_backend_with_params__m(HAllocator *mm__,
     char *text = NULL;
     const char *generic_text = NULL;
     HParserBackend be = PB_INVALID;
-    char *(**text_getter_func)(HAllocator *mm__, HParserBackend be, void *params) = NULL;
+    char *(**text_getter_func)(HAllocator * mm__, HParserBackend be, void *params) = NULL;
 
     if (mm__ == NULL || be_with_params == NULL)
         goto done;

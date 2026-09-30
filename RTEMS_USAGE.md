@@ -248,7 +248,7 @@ rtems_task Init(rtems_task_argument arg) {
 ## Example rtems test — static memory **[STATIC]**
 
 A minimal program that builds a `ch` + `sequence` parser and parses one input,
-using the static pools explicitly. 
+using the static pools explicitly.
 
 ```c
 #include <rtems.h>

@@ -3,7 +3,8 @@
 #ifndef HAMMER_STATIC_ALLOC_H
 #define HAMMER_STATIC_ALLOC_H
 
-#include "allocator.h"   /* HAllocator */
+#include "allocator.h" /* HAllocator */
+
 #include <stddef.h>
 
 /* Initialize the allocators. Call once, before grammar construction. */
@@ -21,6 +22,6 @@ void h_parse_pool_reset(void);
 // checks for sizing and such
 size_t h_grammar_pool_used(void);
 size_t h_parse_pool_used(void);
-size_t h_parse_pool_high_water(void);  // max across all parses since start
+size_t h_parse_pool_high_water(void); // max across all parses since start
 
 #endif /* HAMMER_STATIC_ALLOC_H */

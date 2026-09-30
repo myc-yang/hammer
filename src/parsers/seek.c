@@ -132,7 +132,9 @@ HParser *h_skip__m(HAllocator *mm__, size_t n) {
     return h_new_parser_with_free(mm__, &skip_vt, (void *)n, h_no_free_env);
 }
 
-HParser *h_seek(ssize_t offset, int whence) { return h_seek__m(h_default_allocator, offset, whence); }
+HParser *h_seek(ssize_t offset, int whence) {
+    return h_seek__m(h_default_allocator, offset, whence);
+}
 
 HParser *h_seek__m(HAllocator *mm__, ssize_t offset, int whence) {
     HSeek *env = h_new(HSeek, 1);

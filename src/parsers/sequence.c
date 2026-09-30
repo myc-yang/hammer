@@ -137,7 +137,9 @@ HParser *h_sequence__m(HAllocator *mm__, HParser *p, ...) {
     return ret;
 }
 
-HParser *h_sequence__v(HParser *p, va_list ap) { return h_sequence__mv(h_default_allocator, p, ap); }
+HParser *h_sequence__v(HParser *p, va_list ap) {
+    return h_sequence__mv(h_default_allocator, p, ap);
+}
 
 HParser *h_sequence__mv(HAllocator *mm__, HParser *p, va_list ap_) {
     HSequence *s = h_new(HSequence, 1);

@@ -96,7 +96,7 @@ while (<>) {
     if (/^+(C|RVM|SVM)/) {
 	$mode = $1;
     }
-    
+
     if ($mode eq "TOP") {
 	if (/^#(.*)/) {
 	    print "// $1";
@@ -106,7 +106,5 @@ while (<>) {
     } elsif ($mode eq "RVM") {
     } elsif ($mode eq "C") {
     }
-    
+
 }
-
-

@@ -224,7 +224,7 @@ void h_test_add_data(const char *name, void (*func)(const void *), const void *d
  */
 #define g_check_parse_ok(parser, backend, input, len)                                              \
     do {                                                                                           \
-        if (h_compile((HParser *)(parser), (backend), NULL)) {                                    \
+        if (h_compile((HParser *)(parser), (backend), NULL)) {                                     \
             printf(" [FAIL] %s:%d Compile failed\n", __FILE__, __LINE__);                          \
             fflush(stdout);                                                                        \
             g_test_fail();                                                                         \
@@ -242,7 +242,7 @@ void h_test_add_data(const char *name, void (*func)(const void *), const void *d
 
 #define g_check_parse_failed(parser, backend, input, len)                                          \
     do {                                                                                           \
-        if (h_compile((HParser *)(parser), (backend), NULL) != 0) {                               \
+        if (h_compile((HParser *)(parser), (backend), NULL) != 0) {                                \
             printf(" [FAIL] %s:%d Compile failed\n", __FILE__, __LINE__);                          \
             fflush(stdout);                                                                        \
             g_test_fail();                                                                         \
@@ -259,7 +259,7 @@ void h_test_add_data(const char *name, void (*func)(const void *), const void *d
 
 #define g_check_parse_match(parser, backend, input, len, expected)                                 \
     do {                                                                                           \
-        if (h_compile((HParser *)(parser), (backend), NULL) != 0) {                               \
+        if (h_compile((HParser *)(parser), (backend), NULL) != 0) {                                \
             printf(" [FAIL] %s:%d Compile failed\n", __FILE__, __LINE__);                          \
             fflush(stdout);                                                                        \
             g_test_fail();                                                                         \

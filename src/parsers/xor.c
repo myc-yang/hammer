@@ -43,7 +43,9 @@ static const HParserVtable xor_vt = {
     .higher = true,
 };
 
-HParser *h_xor(const HParser *p1, const HParser *p2) { return h_xor__m(h_default_allocator, p1, p2); }
+HParser *h_xor(const HParser *p1, const HParser *p2) {
+    return h_xor__m(h_default_allocator, p1, p2);
+}
 HParser *h_xor__m(HAllocator *mm__, const HParser *p1, const HParser *p2) {
     HTwoParsers *env = h_new(HTwoParsers, 1);
     env->p1 = p1;
