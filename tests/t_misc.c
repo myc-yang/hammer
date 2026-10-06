@@ -316,12 +316,9 @@ static void test_glue_seq_append_snoc(void) {
     // Test h_seq_append
     HParser *p1 = h_sequence(h_ch('a'), h_ch('b'), NULL);
     HParser *p2 = h_sequence(h_ch('c'), h_ch('d'), NULL);
-    HParser *p_append =
-        h_action(h_sequence(p1, p2, NULL), append_action, NULL);
+    HParser *p_append = h_action(h_sequence(p1, p2, NULL), append_action, NULL);
 
-    g_check_parse_match(
-        p_append, PB_PACKRAT, "abcd", 4,
-        "(u0x61 u0x62 u0x63 u0x64)");
+    g_check_parse_match(p_append, PB_PACKRAT, "abcd", 4, "(u0x61 u0x62 u0x63 u0x64)");
 }
 
 static void test_glue_seq_remove(void) {
@@ -494,9 +491,9 @@ static void test_pprint_write_result_unamb(void) {
 void register_misc_tests(void) {
     g_test_add_func("/core/misc/tt_user", test_tt_user);
     g_test_add_func("/core/misc/tt_registry", test_tt_registry);
-    #ifndef STATIC_BUILD
+#ifndef STATIC_BUILD
     g_test_add_func("/core/misc/oom", test_oom);
-    #endif
+#endif
     g_test_add_func("/core/misc/glue_act_index", test_glue_act_index);
     g_test_add_func("/core/misc/glue_act_first_second_last", test_glue_act_first_second_last);
     g_test_add_func("/core/misc/glue_act_ignore", test_glue_act_ignore);

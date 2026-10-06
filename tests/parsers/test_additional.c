@@ -780,7 +780,7 @@ static void test_ignoreseq_internal(gconstpointer backend) {
     test_seq->len = 4;
     test_seq->which = 2; // Invalid: not 0, not 1, not len-1=3
 
-    #ifndef RTEMS_BUILD
+#ifndef RTEMS_BUILD
     // Use signal handler to catch abort and allow test to continue
     // This allows coverage to be recorded while still hitting the assert line
     struct sigaction old_sa, new_sa;
@@ -797,7 +797,7 @@ static void test_ignoreseq_internal(gconstpointer backend) {
     }
     // Restore original signal handler
     sigaction(SIGABRT, &old_sa, NULL);
-    #endif // #ifndef RTEMS_BUILD
+#endif // #ifndef RTEMS_BUILD
 }
 
 static void test_indirect_internal(gconstpointer backend) {
@@ -1280,14 +1280,14 @@ void register_additional_parser_tests(void) {
     g_test_add_data_func("/core/parser/packrat/bytes_edge_cases", GINT_TO_POINTER(PB_PACKRAT),
                          test_bytes_edge_cases);
     g_test_add_data_func("/core/parser/packrat/epsilon", GINT_TO_POINTER(PB_PACKRAT), test_epsilon);
-    #ifndef STATIC_BUILD
+#ifndef STATIC_BUILD
     g_test_add_data_func("/core/parser/packrat/many_internal", GINT_TO_POINTER(PB_PACKRAT),
                          test_many_internal);
     g_test_add_data_func("/core/parser/packrat/not_internal", GINT_TO_POINTER(PB_PACKRAT),
                          test_not_internal);
     g_test_add_data_func("/core/parser/packrat/optional_internal", GINT_TO_POINTER(PB_PACKRAT),
                          test_optional_internal);
-    #endif
+#endif
     g_test_add_data_func("/core/parser/packrat/end_edge_cases", GINT_TO_POINTER(PB_PACKRAT),
                          test_end_edge_cases);
     g_test_add_data_func("/core/parser/packrat/ch_edge_cases", GINT_TO_POINTER(PB_PACKRAT),
