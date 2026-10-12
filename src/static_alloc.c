@@ -4,9 +4,8 @@
 
 #include "allocator.h"
 
-#include <stdio.h>
-
 #include <rtems.h>
+#include <stdio.h>
 #define SA_HALT(fmt, ...)                                                                          \
     do {                                                                                           \
         printf("static_alloc: " fmt "\n", ##__VA_ARGS__);                                          \
