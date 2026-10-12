@@ -81,7 +81,6 @@ misc_hammer_parts = [
     "hammer.c",
     "pprint.c",
     "registry.c",
-    "static_alloc.c",
     "system_allocator.c",
     "sloballoc.c",
     "trace.c",
@@ -118,7 +117,9 @@ if os.path.isdir(backends_tests_dir):
     combinator_tests += sorted(glob.glob(os.path.join(backends_tests_dir, "*.c")))
 # Filter out test_suite.c if it exists and store paths relative to tests_dir
 combinator_tests = [
-    os.path.relpath(t, tests_dir) for t in combinator_tests if "test_suite.c" not in t
+    os.path.relpath(t, tests_dir)
+    for t in combinator_tests
+    if os.path.basename(t) not in ("test_static_alloc.c", "test_suite.c")
 ]
 ctests.extend(combinator_tests)
 

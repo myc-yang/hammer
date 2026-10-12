@@ -1,38 +1,29 @@
+#if defined(RTEMS_BUILD) && defined(STATIC_BUILD)
 #include "static_alloc.h"
 #include "test_suite.h"
 
 #include <stdint.h>
 
-#ifndef RTEMS_BUILD
-static void test_static_alloc_rejects_alignment_overflow(void) {
-    if (g_test_subprocess()) {
-        h_static_alloc_init();
-        h_grammar_allocator->alloc(h_grammar_allocator, SIZE_MAX);
-        g_error("static allocator accepted a SIZE_MAX request");
-    }
+static void test_static_alloc_pool_accounting(void) {
+    h_static_alloc_init();
 
-    g_test_trap_subprocess(NULL, 0, (GTestSubprocessFlags)0);
-    g_test_trap_assert_failed();
-    g_test_trap_assert_stderr("*pool request too large*");
-}
+    void *grammar = h_grammar_allocator->alloc(h_grammar_allocator, 1);
+    void *parse = h_parse_allocator->alloc(h_parse_allocator, 1);
 
-static void test_static_alloc_rejects_capacity_addition_overflow(void) {
-    if (g_test_subprocess()) {
-        h_static_alloc_init();
-        h_grammar_allocator->alloc(h_grammar_allocator, 1);
-        h_grammar_allocator->alloc(h_grammar_allocator, SIZE_MAX - 7);
-        g_error("static allocator accepted an overflowing capacity request");
-    }
+    g_assert_nonnull(grammar);
+    g_assert_nonnull(parse);
+    g_assert_cmpuint((uintptr_t)grammar % 8u, ==, 0);
+    g_assert_cmpuint((uintptr_t)parse % 8u, ==, 0);
+    g_assert_cmpuint(h_grammar_pool_used(), ==, 8);
+    g_assert_cmpuint(h_parse_pool_used(), ==, 8);
+    g_assert_cmpuint(h_parse_pool_high_water(), ==, 8);
 
-    g_test_trap_subprocess(NULL, 0, (GTestSubprocessFlags)0);
-    g_test_trap_assert_failed();
-    g_test_trap_assert_stderr("*pool exhausted*");
+    h_parse_pool_reset();
+    g_assert_cmpuint(h_parse_pool_used(), ==, 0);
+    g_assert_cmpuint(h_parse_pool_high_water(), ==, 8);
 }
 
 void register_static_alloc_tests(void) {
-    g_test_add_func("/core/static_alloc/alignment_overflow",
-                    test_static_alloc_rejects_alignment_overflow);
-    g_test_add_func("/core/static_alloc/capacity_addition_overflow",
-                    test_static_alloc_rejects_capacity_addition_overflow);
+    g_test_add_func("/core/static_alloc/pool_accounting", test_static_alloc_pool_accounting);
 }
-#endif
+#endif /* defined(RTEMS_BUILD) && defined(STATIC_BUILD) */

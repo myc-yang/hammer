@@ -1,27 +1,17 @@
 /* Copyright (c) 2026 Riverside Research */
-
+#if defined(RTEMS_BUILD) && defined(STATIC_BUILD)
 #include "static_alloc.h"
 
 #include "allocator.h"
 
 #include <stdio.h>
 
-#ifdef RTEMS_BUILD
 #include <rtems.h>
 #define SA_HALT(fmt, ...)                                                                          \
     do {                                                                                           \
         printf("static_alloc: " fmt "\n", ##__VA_ARGS__);                                          \
         rtems_fatal(RTEMS_FATAL_SOURCE_APPLICATION, 1);                                            \
     } while (0)
-#else
-#include <stdio.h>
-#include <stdlib.h>
-#define SA_HALT(fmt, ...)                                                                          \
-    do {                                                                                           \
-        fprintf(stderr, "static_alloc: " fmt "\n", ##__VA_ARGS__);                                 \
-        abort();                                                                                   \
-    } while (0)
-#endif
 
 #include <stdint.h>
 
@@ -139,3 +129,4 @@ void h_parse_pool_reset(void) { parse_sa.offset = 0; }
 size_t h_grammar_pool_used(void) { return grammar_sa.offset; }
 size_t h_parse_pool_used(void) { return parse_sa.offset; }
 size_t h_parse_pool_high_water(void) { return parse_sa.high_water; }
+#endif /* defined(RTEMS_BUILD) && defined(STATIC_BUILD) */

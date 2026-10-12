@@ -1,4 +1,5 @@
 /* Copyright (c) 2026 Riverside Research */
+#if defined(RTEMS_BUILD) && defined(STATIC_BUILD)
 
 #ifndef HAMMER_STATIC_ALLOC_H
 #define HAMMER_STATIC_ALLOC_H
@@ -25,3 +26,4 @@ size_t h_parse_pool_used(void);
 size_t h_parse_pool_high_water(void); // max across all parses since start
 
 #endif /* HAMMER_STATIC_ALLOC_H */
+#endif /* defined(RTEMS_BUILD) && defined(STATIC_BUILD) */

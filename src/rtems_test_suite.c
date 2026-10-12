@@ -2,7 +2,9 @@
 
 #include "rtems_test_suite.h"
 
+#ifdef STATIC_BUILD
 #include "static_alloc.h"
+#endif
 
 #include <stdio.h>
 

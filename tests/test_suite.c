@@ -71,6 +71,8 @@ extern void register_sloballoc_tests(void);
 extern void register_system_allocator_tests(void);
 #ifndef RTEMS_BUILD
 extern void register_parser_free_tests(void);
+#endif
+#if defined(RTEMS_BUILD) && defined(STATIC_BUILD)
 extern void register_static_alloc_tests(void);
 #endif
 
@@ -128,8 +130,7 @@ void register_all_hammer_tests(void) {
     register_pprint_tests();
     register_sloballoc_tests();
     register_system_allocator_tests();
-#ifndef RTEMS_BUILD
-    register_parser_free_tests();
+#if defined(RTEMS_BUILD) && defined(STATIC_BUILD)
     register_static_alloc_tests();
 #endif
 }
@@ -182,8 +183,9 @@ int main(int argc, char **argv) {
     register_pprint_tests();
     register_sloballoc_tests();
     register_system_allocator_tests();
+#ifndef RTEMS_BUILD
     register_parser_free_tests();
-    register_static_alloc_tests();
+#endif
 
     g_test_run();
 }

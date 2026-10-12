@@ -19,11 +19,16 @@ RANLIB = $(RTEMS_PREFIX)/bin/$(RTEMS_ARCH)-ranlib
 
 RTEMS_BSP_LIB = $(RTEMS_PREFIX)/$(RTEMS_BSP)/lib
 HAMMER_SRC = src
-BUILD_DIR = build/rtems
 INSTALL_PREFIX ?= $(HOME)/install
 TEST_DIR = tests
-TEST_BUILD_DIR = build/rtems/tests
 STATIC_BUILD ?= 0
+BUILD_DIR = build/rtems
+
+ifneq ($(STATIC_BUILD),0)
+BUILD_DIR := build/rtems/static
+endif
+
+TEST_BUILD_DIR = $(BUILD_DIR)/tests
 
 # Compiler flags
 ifeq ($(findstring sparc,$(RTEMS_BSP)),sparc)
@@ -62,7 +67,6 @@ TEST_CFLAGS = $(CFLAGS) -Wno-unused-function
 SRCS = \
     $(HAMMER_SRC)/hammer.c \
     $(HAMMER_SRC)/allocator.c \
-    $(HAMMER_SRC)/static_alloc.c \
     $(HAMMER_SRC)/system_allocator.c \
     $(HAMMER_SRC)/sloballoc.c \
     $(HAMMER_SRC)/glue.c \
@@ -116,11 +120,21 @@ SRCS = \
     $(HAMMER_SRC)/parsers/whitespace.c \
     $(HAMMER_SRC)/parsers/xor.c
 
+ifneq ($(STATIC_BUILD),0)
+SRCS += $(HAMMER_SRC)/static_alloc.c
+endif
+
 # Keep the RTEMS test archive in sync with the native suite, including new
 # parser and backend tests, without maintaining a second handwritten list.
-RTEMS_HOST_ONLY_TEST_SRCS = $(TEST_DIR)/backends/test_trace.c
+RTEMS_HOST_ONLY_TEST_SRCS = \
+	$(TEST_DIR)/backends/test_trace.c \
+	$(TEST_DIR)/test_static_alloc.c
 TEST_SRCS := $(filter-out $(RTEMS_HOST_ONLY_TEST_SRCS), \
 	$(sort $(shell find $(TEST_DIR) -type f -name '*.c' -print)))
+
+ifneq ($(STATIC_BUILD),0)
+TEST_SRCS += $(TEST_DIR)/test_static_alloc.c
+endif
 
 # Object files
 
@@ -190,7 +204,9 @@ install:
 	cp $(HAMMER_SRC)/glue.h $(INSTALL_PREFIX)/include/
 	cp $(HAMMER_SRC)/compiler_specifics.h $(INSTALL_PREFIX)/include/
 	cp $(HAMMER_SRC)/allocator.h $(INSTALL_PREFIX)/include/
+ifneq ($(STATIC_BUILD),0)
 	cp $(HAMMER_SRC)/static_alloc.h $(INSTALL_PREFIX)/include/
+endif
 	cp $(HAMMER_SRC)/rtems_test_suite.h $(INSTALL_PREFIX)/include/
 	cp $(HAMMER_SRC)/internal.h $(INSTALL_PREFIX)/include/
 	cp $(HAMMER_SRC)/platform.h $(INSTALL_PREFIX)/include/
