@@ -12,6 +12,22 @@ static void test_desugar_ch(void) {
     g_check_cmp_int(desugared->type, ==, HCF_CHAR);
 }
 
+static void test_desugar_external_stack_root_reuse(void) {
+    HParser *p = h_ch('a');
+    HCFStack *stk = h_cfstack_new(&system_allocator);
+
+    HCFChoice *first = h_desugar(&system_allocator, stk, p);
+    HCFChoice *second = h_desugar(&system_allocator, stk, p);
+
+    g_check_cmp_ptr(first, !=, NULL);
+    g_check_cmp_ptr(second, ==, first);
+    g_check_cmp_ptr(stk->stack[0], ==, first);
+    g_check_cmp_ptr(stk->last_completed, ==, first);
+
+    h_cfstack_free(&system_allocator, stk);
+    h_parser_free(p);
+}
+
 static void test_desugar_token(void) {
     const HParser *p = h_token((const uint8_t *)"abc", 3);
     HCFChoice *desugared = h_desugar(&system_allocator, NULL, p);
@@ -74,15 +90,27 @@ static void test_desugar_bits_signed(void) {
     // Bits parser desugars to a choice (not directly to HCF_BITS)
     g_check_cmp_int(desugared->type, ==, HCF_CHOICE);
 }
-#ifndef RTEMS_BUILD
+static void test_desugar_float(void) {
+    const HParser *p = h_float32();
+    HCFChoice *desugared = h_desugar(&system_allocator, NULL, p);
+    g_check_cmp_ptr(desugared, !=, NULL);
+    g_check_cmp_int(desugared->type, ==, HCF_CHOICE);
+    g_check_cmp_ptr(desugared->reshape, !=, NULL);
+}
+
+static void test_desugar_float_range(void) {
+    const HParser *p = h_float_range(h_float16(), -65504.0f, 65504.0f);
+    HCFChoice *desugared = h_desugar(&system_allocator, NULL, p);
+    g_check_cmp_ptr(desugared, !=, NULL);
+    g_check_cmp_int(desugared->type, ==, HCF_CHOICE);
+}
+
 static void test_desugar_int_range(void) {
     const HParser *p = h_int_range(h_uint8(), 0, 255);
     HCFChoice *desugared = h_desugar(&system_allocator, NULL, p);
     g_check_cmp_ptr(desugared, !=, NULL);
-    // int_range desugars to a charset (HCF_CHARSET = 2)
-    g_check_cmp_int(desugared->type, ==, HCF_CHARSET);
+    g_check_cmp_int(desugared->type, ==, HCF_CHOICE);
 }
-#endif // #ifndef RTEMS_BUILD
 
 static void test_desugar_sequence(void) {
     const HParser *p = h_sequence(h_ch('a'), h_ch('b'), h_ch('c'), NULL);
@@ -107,6 +135,20 @@ static void test_desugar_many(void) {
 
 static void test_desugar_many1(void) {
     const HParser *p = h_many1(h_ch('a'));
+    HCFChoice *desugared = h_desugar(&system_allocator, NULL, p);
+    g_check_cmp_ptr(desugared, !=, NULL);
+    g_check_cmp_int(desugared->type, ==, HCF_CHOICE);
+}
+
+static void test_desugar_many_cap(void) {
+    const HParser *p = h_many_cap(h_ch('a'), 1);
+    HCFChoice *desugared = h_desugar(&system_allocator, NULL, p);
+    g_check_cmp_ptr(desugared, !=, NULL);
+    g_check_cmp_int(desugared->type, ==, HCF_CHOICE);
+}
+
+static void test_desugar_many1_cap(void) {
+    const HParser *p = h_many1_cap(h_ch('a'), 1);
     HCFChoice *desugared = h_desugar(&system_allocator, NULL, p);
     g_check_cmp_ptr(desugared, !=, NULL);
     g_check_cmp_int(desugared->type, ==, HCF_CHOICE);
@@ -141,7 +183,7 @@ static void test_desugar_indirect(void) {
     HCFChoice *desugared = h_desugar(&system_allocator, NULL, p);
     g_check_cmp_ptr(desugared, !=, NULL);
     // The desugared form should be the same as desugaring h_ch('a') directly
-    g_check_cmp_int(desugared->type, ==, HCF_CHAR);
+    g_check_cmp_int(desugared->type, ==, HCF_CHOICE);
 }
 
 // Test desugar for action parser
@@ -220,6 +262,15 @@ static void test_desugar_to_cfg_choice(void) {
     h_cfgrammar_free(g);
 }
 
+static void test_desugar_to_cfg_dispatch(void) {
+    OpcodeMap entries[] = {{1, h_ch(0x41)}, {2, h_ch(0x42)}, {2013, h_uint32()}};
+    HParser *discriminator = h_uint8();
+    const HParser *p = h_dispatch(discriminator, entries, NULL);
+    HCFChoice *desugared = h_desugar(&system_allocator, NULL, p);
+    g_check_cmp_ptr(desugared, !=, NULL);
+    g_check_cmp_int(desugared->type, ==, HCF_CHOICE);
+}
+
 static void test_desugar_to_cfg_many(void) {
     const HParser *p = h_many(h_ch('a'));
     HCFGrammar *g = h_cfgrammar(&system_allocator, p);
@@ -230,6 +281,8 @@ static void test_desugar_to_cfg_many(void) {
 
 void register_desugar_tests(void) {
     g_test_add_func("/core/desugar/ch", test_desugar_ch);
+    g_test_add_func("/core/desugar/external_stack_root_reuse",
+                    test_desugar_external_stack_root_reuse);
     g_test_add_func("/core/desugar/token", test_desugar_token);
     g_test_add_func("/core/desugar/epsilon", test_desugar_epsilon);
     g_test_add_func("/core/desugar/end", test_desugar_end);
@@ -238,13 +291,15 @@ void register_desugar_tests(void) {
     g_test_add_func("/core/desugar/charset_not_in", test_desugar_charset_not_in);
     g_test_add_func("/core/desugar/bits", test_desugar_bits);
     g_test_add_func("/core/desugar/bits_signed", test_desugar_bits_signed);
-    #ifndef RTEMS_BUILD
+    g_test_add_func("/core/desugar/float", test_desugar_float);
+    g_test_add_func("/core/desugar/float_range", test_desugar_float_range);
     g_test_add_func("/core/desugar/int_range", test_desugar_int_range);
-    #endif // #ifndef RTEMS_BUILD
     g_test_add_func("/core/desugar/sequence", test_desugar_sequence);
     g_test_add_func("/core/desugar/choice", test_desugar_choice);
     g_test_add_func("/core/desugar/many", test_desugar_many);
     g_test_add_func("/core/desugar/many1", test_desugar_many1);
+    g_test_add_func("/core/desugar/many_cap", test_desugar_many_cap);
+    g_test_add_func("/core/desugar/many1_cap", test_desugar_many1_cap);
     g_test_add_func("/core/desugar/optional", test_desugar_optional);
     g_test_add_func("/core/desugar/ignore", test_desugar_ignore);
     g_test_add_func("/core/desugar/ignoreseq", test_desugar_ignoreseq);
@@ -259,4 +314,5 @@ void register_desugar_tests(void) {
     g_test_add_func("/core/desugar/to_cfg", test_desugar_to_cfg);
     g_test_add_func("/core/desugar/to_cfg_choice", test_desugar_to_cfg_choice);
     g_test_add_func("/core/desugar/to_cfg_many", test_desugar_to_cfg_many);
+    g_test_add_func("/core/desugar/to_cfg_dispatch", test_desugar_to_cfg_dispatch);
 }

@@ -19,10 +19,16 @@ RANLIB = $(RTEMS_PREFIX)/bin/$(RTEMS_ARCH)-ranlib
 
 RTEMS_BSP_LIB = $(RTEMS_PREFIX)/$(RTEMS_BSP)/lib
 HAMMER_SRC = src
-BUILD_DIR = build/rtems
 INSTALL_PREFIX ?= $(HOME)/install
 TEST_DIR = tests
-TEST_BUILD_DIR = build/rtems/tests
+STATIC_BUILD ?= 0
+BUILD_DIR = build/rtems
+
+ifneq ($(STATIC_BUILD),0)
+BUILD_DIR := build/rtems/static
+endif
+
+TEST_BUILD_DIR = $(BUILD_DIR)/tests
 
 # Compiler flags
 ifeq ($(findstring sparc,$(RTEMS_BSP)),sparc)
@@ -33,26 +39,34 @@ else
 $(error Unknown RTEMS_BSP architecture: $(RTEMS_BSP))
 endif
 
-# if not running on simultor, can probably safely remove -DSIMULATOR_LIMITED
-# if not using static build, remove -DSTATIC_BUILD
+# If not running on a simulator, SIMULATOR_LIMITED can be removed.
+# Static memory mode is opt-in: use `make STATIC_BUILD=1`.
+RTEMS_DEFINES = -DRTEMS_BUILD -DSIMULATOR_LIMITED
+ifneq ($(STATIC_BUILD),0)
+RTEMS_DEFINES += -DSTATIC_BUILD
+endif
+
 CFLAGS = \
     $(TARGET_FLAGS) \
 	-std=c99 \
 	-O2 \
 	-D_POSIX_C_SOURCE=200809L \
-    -DRTEMS_BUILD -DSIMULATOR_LIMITED -DSTATIC_BUILD\
+    $(RTEMS_DEFINES) \
 	-Wall -Wextra -Wno-unused-parameter -Wno-unused-variable \
 	-g \
 	-I$(RTEMS_BSP_LIB)/include \
     -Ishim \
 	-I$(HAMMER_SRC)
 
+# RTEMS compiles all test sources even when some test registrations are
+# intentionally omitted for unsupported features.
+TEST_CFLAGS = $(CFLAGS) -Wno-unused-function
+
 # Source files
 
 SRCS = \
     $(HAMMER_SRC)/hammer.c \
     $(HAMMER_SRC)/allocator.c \
-    $(HAMMER_SRC)/static_alloc.c \
     $(HAMMER_SRC)/system_allocator.c \
     $(HAMMER_SRC)/sloballoc.c \
     $(HAMMER_SRC)/glue.c \
@@ -62,6 +76,7 @@ SRCS = \
     $(HAMMER_SRC)/pprint.c \
     $(HAMMER_SRC)/registry.c \
     $(HAMMER_SRC)/platform.c \
+    $(HAMMER_SRC)/trace.c \
     $(HAMMER_SRC)/bitreader.c \
     $(HAMMER_SRC)/bitwriter.c \
     $(HAMMER_SRC)/rtems_test_suite.c \
@@ -69,6 +84,7 @@ SRCS = \
     $(HAMMER_SRC)/backends/packrat.c \
     $(HAMMER_SRC)/backends/params.c \
     $(HAMMER_SRC)/backends/missing.c \
+    $(HAMMER_SRC)/backends/regex_stub.c \
     $(HAMMER_SRC)/parsers/and.c \
     $(HAMMER_SRC)/parsers/action.c \
     $(HAMMER_SRC)/parsers/attr_bool.c \
@@ -80,9 +96,12 @@ SRCS = \
     $(HAMMER_SRC)/parsers/charset.c \
     $(HAMMER_SRC)/parsers/choice.c \
     $(HAMMER_SRC)/parsers/difference.c \
+    $(HAMMER_SRC)/parsers/dispatch.c \
     $(HAMMER_SRC)/parsers/end.c \
     $(HAMMER_SRC)/parsers/endianness.c \
     $(HAMMER_SRC)/parsers/epsilon.c \
+    $(HAMMER_SRC)/parsers/float.c \
+    $(HAMMER_SRC)/parsers/float_range.c \
     $(HAMMER_SRC)/parsers/ignore.c \
     $(HAMMER_SRC)/parsers/ignoreseq.c \
     $(HAMMER_SRC)/parsers/indirect.c \
@@ -101,48 +120,21 @@ SRCS = \
     $(HAMMER_SRC)/parsers/whitespace.c \
     $(HAMMER_SRC)/parsers/xor.c
 
-# Test Source
-TEST_SRCS = \
-	$(TEST_DIR)/test_registry.c \
-	$(TEST_DIR)/t_grammar.c \
-	$(TEST_DIR)/test_hammer.c \
-	$(TEST_DIR)/test_glue.c \
-	$(TEST_DIR)/test_datastructures.c \
-	$(TEST_DIR)/test_pprint.c \
-	$(TEST_DIR)/t_bitreader.c \
-	$(TEST_DIR)/t_bitwriter.c \
-	$(TEST_DIR)/t_parser.c \
-	$(TEST_DIR)/t_misc.c \
-	$(TEST_DIR)/test_suite.c \
-	$(TEST_DIR)/t_benchmark.c \
-	$(TEST_DIR)/t_mm.c \
-	$(TEST_DIR)/t_names.c \
-	$(TEST_DIR)/t_regression.c \
-	$(TEST_DIR)/test_allocator.c \
-	$(TEST_DIR)/test_cfgrammar.c \
-	$(TEST_DIR)/test_platform.c \
-	$(TEST_DIR)/test_sloballoc.c \
-	$(TEST_DIR)/test_system_allocator.c \
-	$(TEST_DIR)/test_unimplemented.c \
-	$(TEST_DIR)/parsers/test_additional.c \
-	$(TEST_DIR)/parsers/test_basic.c \
-	$(TEST_DIR)/parsers/test_charset.c \
-	$(TEST_DIR)/parsers/test_desugar.c \
-	$(TEST_DIR)/parsers/test_floats.c \
-	$(TEST_DIR)/parsers/test_ignoreseq.c \
-	$(TEST_DIR)/parsers/test_indirect.c \
-    $(TEST_DIR)/parsers/test_integers.c \
-	$(TEST_DIR)/parsers/test_internal.c \
-	$(TEST_DIR)/parsers/test_parser_internal.c \
-	$(TEST_DIR)/parsers/test_permutation.c \
-	$(TEST_DIR)/parsers/test_seek.c \
-	$(TEST_DIR)/parsers/test_sequence.c \
-	$(TEST_DIR)/parsers/test_token.c \
-	$(TEST_DIR)/parsers/test_value.c \
-	$(TEST_DIR)/parsers/test_whitespace.c \
-	$(TEST_DIR)/parsers/test_xor.c \
-	$(TEST_DIR)/backends/test_missing.c \
-	$(TEST_DIR)/backends/test_packrat.c
+ifneq ($(STATIC_BUILD),0)
+SRCS += $(HAMMER_SRC)/static_alloc.c
+endif
+
+# Keep the RTEMS test archive in sync with the native suite, including new
+# parser and backend tests, without maintaining a second handwritten list.
+RTEMS_HOST_ONLY_TEST_SRCS = \
+	$(TEST_DIR)/backends/test_trace.c \
+	$(TEST_DIR)/test_static_alloc.c
+TEST_SRCS := $(filter-out $(RTEMS_HOST_ONLY_TEST_SRCS), \
+	$(sort $(shell find $(TEST_DIR) -type f -name '*.c' -print)))
+
+ifneq ($(STATIC_BUILD),0)
+TEST_SRCS += $(TEST_DIR)/test_static_alloc.c
+endif
 
 # Object files
 
@@ -157,7 +149,7 @@ TEST_TARGET = $(BUILD_DIR)/libhammer_tests.a
 
 $(TEST_BUILD_DIR)/%.o: $(TEST_DIR)/%.c
 	@mkdir -p $(dir $@)
-	$(CC) -I$(TEST_DIR) $(CFLAGS) -c $< -o $@
+	$(CC) -I$(TEST_DIR) $(TEST_CFLAGS) -c $< -o $@
 
 $(TEST_TARGET): $(TEST_OBJS)
 	$(AR) rcs $@ $^
@@ -206,16 +198,18 @@ clean:
 # INSTALL
 
 install:
-	mkdir -p ~/install/lib ~/install/include
-	cp $(TARGET) ~/install/lib/
-	cp $(HAMMER_SRC)/hammer.h ~/install/include/
-	cp $(HAMMER_SRC)/glue.h ~/install/include/
-	cp $(HAMMER_SRC)/compiler_specifics.h ~/install/include/
-	cp $(HAMMER_SRC)/allocator.h ~/install/include/
-	cp $(HAMMER_SRC)/static_alloc.h ~/install/include/
-	cp $(HAMMER_SRC)/rtems_test_suite.h ~/install/include/
-	cp $(HAMMER_SRC)/internal.h ~/install/include/
-	cp $(HAMMER_SRC)/platform.h ~/install/include/
+	mkdir -p $(INSTALL_PREFIX)/lib $(INSTALL_PREFIX)/include
+	cp $(TARGET) $(INSTALL_PREFIX)/lib/
+	cp $(HAMMER_SRC)/hammer.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/glue.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/compiler_specifics.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/allocator.h $(INSTALL_PREFIX)/include/
+ifneq ($(STATIC_BUILD),0)
+	cp $(HAMMER_SRC)/static_alloc.h $(INSTALL_PREFIX)/include/
+endif
+	cp $(HAMMER_SRC)/rtems_test_suite.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/internal.h $(INSTALL_PREFIX)/include/
+	cp $(HAMMER_SRC)/platform.h $(INSTALL_PREFIX)/include/
 
 install-tests: install
 	mkdir -p $(INSTALL_PREFIX)/tests

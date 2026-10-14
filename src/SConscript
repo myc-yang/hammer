@@ -11,16 +11,18 @@ Import("env testruns binding_results binding_test_stamps")
 
 dist_headers = [
     "hammer.h",
+    "hammer_auto_source.h",
     "allocator.h",
     "compiler_specifics.h",
     "glue.h",
     "internal.h",
+    "trace.h",
     "platform.h",
 ]
 
 parsers_headers = ["parsers/parser_internal.h"]
 
-backends_headers = ["backends/missing.h"]
+backends_headers = ["backends/missing.h", "backends/lr.h", "backends/params.h", "backends/regex.h"]
 
 parsers = [
     "parsers/%s.c" % s
@@ -36,9 +38,12 @@ parsers = [
         "charset",
         "choice",
         "difference",
+        "dispatch",
         "end",
         "endianness",
         "epsilon",
+        "float",
+        "float_range",
         "ignore",
         "ignoreseq",
         "indirect",
@@ -58,7 +63,11 @@ parsers = [
     ]
 ]
 
-backends = ["backends/%s.c" % s for s in ["missing", "packrat"]]
+backends = [
+    "backends/%s.c" % s
+    for s in ["missing", "packrat", "params", "regex", "lr", "lr0", "lalr", "llk", "glr"]
+]
+
 
 misc_hammer_parts = [
     "allocator.c",
@@ -74,6 +83,7 @@ misc_hammer_parts = [
     "registry.c",
     "system_allocator.c",
     "sloballoc.c",
+    "trace.c",
 ]
 
 misc_hammer_parts += ["platform.c"]
@@ -107,7 +117,9 @@ if os.path.isdir(backends_tests_dir):
     combinator_tests += sorted(glob.glob(os.path.join(backends_tests_dir, "*.c")))
 # Filter out test_suite.c if it exists and store paths relative to tests_dir
 combinator_tests = [
-    os.path.relpath(t, tests_dir) for t in combinator_tests if "test_suite.c" not in t
+    os.path.relpath(t, tests_dir)
+    for t in combinator_tests
+    if os.path.basename(t) not in ("test_static_alloc.c", "test_suite.c")
 ]
 ctests.extend(combinator_tests)
 
@@ -180,7 +192,8 @@ env.Append(CPPPATH=[Dir("#").abspath, src_dir])
 env.Install("$incpath", dist_headers)
 env.Install("$parsersincpath", parsers_headers)
 env.Install("$backendsincpath", backends_headers)
-env.Install("$pkgconfigpath", "../../../libhammer.pc")
+pkgconfig_install = env.Install("$pkgconfigpath", "../../../libhammer.pc")
+env.Depends(pkgconfig_install, "#libhammer.pc")
 
 if GetOption("with_tests"):
     testenv = env.Clone()
@@ -196,10 +209,13 @@ if GetOption("with_tests"):
     test_sources = [os.path.join(tests_dir, t) for t in ctests] + [
         os.path.join(tests_dir, "test_suite.c")
     ]
+    ctest_program_kwargs = {}
+    if testenv.GetOption("coverage"):
+        ctest_program_kwargs["LINKFLAGS"] = "--coverage"
     ctestexec = testenv.Program(
         os.path.join("$BUILD_BASE", "test_suite"),
         test_sources,
-        LINKFLAGS="--coverage" if testenv.GetOption("coverage") else None,
+        **ctest_program_kwargs,
     )
     _libdir = libhammer_shared[0].dir.abspath if libhammer_shared is not None else ""
     _exe = ctestexec[0].path

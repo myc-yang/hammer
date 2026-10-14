@@ -17,6 +17,7 @@ static HParseResult *parse_butnot(void *env, HParseState *state) {
     }
     // cache the state after parse #1, since we might have to back up to it
     HInputStream after_p1_state = state->input_stream;
+    HActionPlan *after_p1_plan = state->action_plan;
     state->input_stream = start_state;
     HParseResult *r2 = h_do_parse(parsers->p2, state);
     // don't touch the input state (overrun flag) if we must suspend
@@ -25,12 +26,13 @@ static HParseResult *parse_butnot(void *env, HParseState *state) {
     }
     // in all other cases, the input stream should be in the post-p1 state
     state->input_stream = after_p1_state;
+    state->action_plan = after_p1_plan;
     if (NULL == r2) {
         return r1;
     }
     size_t r1len = token_length(r1);
     size_t r2len = token_length(r2);
-    // if both match but p1's text no longer than p2's, fail
+    // if both match but p1's text isn't longer than p2's, fail
     if (r1len <= r2len) {
         return NULL;
     } else {
@@ -39,9 +41,10 @@ static HParseResult *parse_butnot(void *env, HParseState *state) {
 }
 
 static const HParserVtable butnot_vt = {
+    .name = "h_butnot",
     .parse = parse_butnot,
     .isValidRegular = h_false,
-    .isValidCF = h_false, // XXX should this be true if both p1 and p2 are CF?
+    .isValidCF = h_false,
     .higher = true,
 };
 
@@ -54,3 +57,5 @@ HParser *h_butnot__m(HAllocator *mm__, const HParser *p1, const HParser *p2) {
     env->p2 = p2;
     return h_new_parser(mm__, &butnot_vt, env);
 }
+
+bool h_is_butnot_parser(const HParser *parser) { return parser && parser->vtable == &butnot_vt; }

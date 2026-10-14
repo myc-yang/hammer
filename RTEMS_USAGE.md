@@ -9,6 +9,9 @@ It covers two things:
    entirely from fixed static buffers instead of the heap. Sections that only
    apply to that mode are marked **[STATIC]**.
 
+RTEMS supports the **packrat backend only**. Calls selecting regex, LL(k),
+LALR, or GLR return an unsupported-backend error.
+
 ## Build requirements
 
 - RTEMS 5.0.0 toolchain at a known prefix
@@ -34,6 +37,15 @@ Examples:
 Run `make install` to stage `libhammer.a` and the public headers into
 `$INSTALL_PREFIX` (default `$HOME/install`). Run `make install-tests`
 to additionally stage `libhammer_tests.a`.
+
+Build the test archive with:
+
+    make tests
+
+The default uses the normal RTEMS heap allocator. To compile the static-pool
+configuration as well:
+
+    make tests STATIC_BUILD=1
 
 ## Linking your application
 
@@ -76,6 +88,13 @@ placing `-lhammer_tests` BEFORE `-lhammer`.
   assume.
 * Some desugar tests were removed, as they did not verify any functionality —
   they only verified desugar output formatting.
+* The RTEMS test archive follows the current native test source list. It
+  registers data-driven parser tests only for packrat; the regex,
+  context-free, and `k`-parameter backend suites are not registered. Trace
+  tests are excluded because they require GLib subprocess/thread support; two
+  allocator-failure tests require GLib subprocess trapping, and two
+  parser-free tests require GLib threads. The latter tests are not registered
+  on RTEMS.
 
 ## Static (no-heap) memory mode  **[STATIC]**
 
@@ -181,7 +200,8 @@ seen so far, which is useful for tuning `PARSE_POOL_SIZE`.
 ### Build flags related to static mode **[STATIC]**
 
 * `STATIC_BUILD`: excludes tests and code paths that exercise `realloc`, which
-  the static allocator does not support. Find this flag in the CFLAGS in the Makefile. The static allocator's own
+  the static allocator does not support. Enable it with
+  `make STATIC_BUILD=1`. The static allocator's own
   `realloc` deliberately halts if called; this is a tripwire, not a bug; it
   signals that an unexpected code path tried to realloc.
 
@@ -228,7 +248,7 @@ rtems_task Init(rtems_task_argument arg) {
 ## Example rtems test — static memory **[STATIC]**
 
 A minimal program that builds a `ch` + `sequence` parser and parses one input,
-using the static pools explicitly. 
+using the static pools explicitly.
 
 ```c
 #include <rtems.h>

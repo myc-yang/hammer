@@ -1,4 +1,5 @@
 /* Copyright (c) 2026 Riverside Research */
+#include "../trace.h"
 #include "parser_internal.h"
 
 #include <stdarg.h>
@@ -15,24 +16,28 @@
 #endif
 #endif
 
-typedef struct {
-    size_t len;
-    HParser **p_array;
-} HSequence;
-
 static HParseResult *parse_choice(void *env, HParseState *state) {
     HSequence *s = (HSequence *)env;
     HInputStream backup = state->input_stream;
+    HTraceState *trace = state->input_stream.trace;
+    size_t trace_scope = TRACE_CHOICE_BEGIN(trace);
     for (size_t i = 0; i < s->len; ++i) {
         if (i != 0)
             state->input_stream = backup;
+        TRACE_CHOICE_ARM_BEGIN(trace, trace_scope, i);
         HParseResult *tmp = h_do_parse(s->p_array[i], state);
-        if (NULL != tmp)
+        TRACE_CHOICE_ARM_END(trace, trace_scope, tmp != NULL);
+        if (NULL != tmp) {
+            TRACE_CHOICE_END(trace, trace_scope, true);
             return tmp;
-        if (want_suspend(state))
+        }
+        if (want_suspend(state)) {
+            TRACE_CHOICE_END(trace, trace_scope, true);
             return NULL; // bail out early, leaving overrun flag
+        }
     }
     // nothing succeeded, so fail
+    TRACE_CHOICE_END(trace, trace_scope, false);
     return NULL;
 }
 
@@ -66,13 +71,46 @@ static void desugar_choice(HAllocator *mm__, HCFStack *stk__, void *env) {
     HCFS_END_CHOICE();
 }
 
+static bool choice_ctrvm(HRVMProg *prog, void *env) {
+    HSequence *s = (HSequence *)env;
+    STACK_VLA(uint16_t, gotos, s->len);
+    const HParser *choice = prog->current_parser;
+    size_t choice_id = ++prog->next_choice_id;
+    for (size_t i = 0; i < s->len; ++i) {
+        uint16_t insn = h_rvm_insert_insn(prog, RVM_FORK, 0);
+        const HDiagnosticContext *parent_context = prog->current_context;
+        HDiagnosticContext *path = h_rvm_alloc(prog, sizeof(*path));
+        path->parser = NULL;
+        path->choice = choice;
+        path->choice_alternative = i;
+        path->choice_id = choice_id;
+        path->next = parent_context;
+        prog->current_context = path;
+        bool compiled = h_compile_regex(prog, s->p_array[i]);
+        prog->current_context = parent_context;
+        if (!compiled)
+            return false;
+        gotos[i] = h_rvm_insert_insn(prog, RVM_GOTO, 65535);
+        h_rvm_patch_arg(prog, insn, h_rvm_get_ip(prog));
+    }
+    h_rvm_insert_insn(prog, RVM_MATCH, 0x00FF);
+    uint16_t jump = h_rvm_get_ip(prog);
+    for (size_t i = 0; i < s->len; ++i)
+        h_rvm_patch_arg(prog, gotos[i], jump);
+    return true;
+}
+
 static const HParserVtable choice_vt = {
+    .name = "h_choice",
     .parse = parse_choice,
     .isValidRegular = choice_isValidRegular,
     .isValidCF = choice_isValidCF,
+    .compile_to_rvm = choice_ctrvm,
     .desugar = desugar_choice,
     .higher = true,
 };
+
+bool h_is_choice_parser(const HParser *parser) { return parser && parser->vtable == &choice_vt; }
 
 HParser *h_choice(HParser *p, ...) {
     va_list ap;
@@ -116,13 +154,13 @@ HParser *h_choice__mv(HAllocator *mm__, HParser *p, va_list ap_) {
     va_end(ap);
 
     s->len = len;
-    return h_new_parser(mm__, &choice_vt, s);
+    return h_new_parser_with_free(mm__, &choice_vt, (void *)s, h_free_seq_env);
 }
 
 HParser *h_choice__a(void *args[]) { return h_choice__ma(h_default_allocator, args); }
 
 HParser *h_choice__ma(HAllocator *mm__, void *args[]) {
-    size_t len = -1; // because do...while
+    size_t len = (size_t)-1; // because do...while
     const HParser *arg;
 
     do {
@@ -137,11 +175,7 @@ HParser *h_choice__ma(HAllocator *mm__, void *args[]) {
     }
 
     s->len = len;
-    HParser *ret = h_new(HParser, 1);
-    ret->vtable = &choice_vt;
-    ret->env = (void *)s;
-    ret->backend = h_get_default_backend();
-    ret->backend_vtable = h_get_default_backend_vtable();
+    HParser *ret = h_new_parser_with_free(mm__, &choice_vt, (void *)s, h_free_seq_env);
     ret->desugared = NULL;
     return ret;
 }

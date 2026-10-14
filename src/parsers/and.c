@@ -3,14 +3,17 @@
 
 static HParseResult *parse_and(void *env, HParseState *state) {
     HInputStream bak = state->input_stream;
+    HActionPlan *plan = state->action_plan;
     HParseResult *res = h_do_parse((HParser *)env, state);
     if (!res)
         return NULL; // propagate failed input state, esp. overrun
     state->input_stream = bak;
+    state->action_plan = plan;
     return make_result(state->arena, NULL);
 }
 
 static const HParserVtable and_vt = {
+    .name = "h_and",
     .parse = parse_and,
     .isValidRegular = h_false, /* TODO: strictly speaking this should be regular,
                                   but it will be a huge amount of work and
@@ -24,5 +27,5 @@ HParser *h_and(const HParser *p) { return h_and__m(h_default_allocator, p); }
 HParser *h_and__m(HAllocator *mm__, const HParser *p) {
     // zero-width postive lookahead
     void *env = (void *)p;
-    return h_new_parser(mm__, &and_vt, env);
+    return h_new_parser_with_free(mm__, &and_vt, env, h_no_free_env);
 }

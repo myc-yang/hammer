@@ -1,4 +1,5 @@
 /* Copyright (c) 2026 Riverside Research */
+#include "../trace.h"
 #include "parser_internal.h"
 
 typedef struct {
@@ -25,7 +26,7 @@ static void *aa_realloc(HAllocator *allocator, void *ptr, size_t size) {
 
 static void aa_free(HAllocator *allocator, void *ptr) {
     HArena *arena = ((ArenaAllocator *)allocator)->arena;
-    h_arena_free(arena, ptr);
+    // h_arena_free(arena, ptr);
 }
 
 static HParseResult *parse_bind(void *be_, HParseState *state) {
@@ -36,10 +37,13 @@ static HParseResult *parse_bind(void *be_, HParseState *state) {
         return NULL;
 
     // create a wrapper arena allocator for the continuation
-    ArenaAllocator aa = {{aa_alloc, aa_realloc, aa_free}, state->arena};
+    ArenaAllocator aa = {{aa_alloc, aa_realloc, aa_free, NULL, NULL}, state->arena};
 
     HParser *kx = be->k((HAllocator *)&aa, res->ast, be->env);
     if (!kx) {
+        size_t at = state->input_stream.pos + state->input_stream.index;
+        h_trace_note_failure(state->input_stream.trace, H_PARSE_ERROR_HIGHER_ORDER,
+                             "bind continuation did not produce a parser", at, at);
         return NULL;
     }
 
@@ -51,6 +55,7 @@ static HParseResult *parse_bind(void *be_, HParseState *state) {
 }
 
 static const HParserVtable bind_vt = {
+    .name = "h_bind",
     .parse = parse_bind,
     .isValidRegular = h_false,
     .isValidCF = h_false,

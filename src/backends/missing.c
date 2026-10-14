@@ -15,7 +15,8 @@ HParseResult *h_missing_parse(HAllocator *mm__, const HParser *parser, HInputStr
     return NULL;
 }
 
-void h_missing_free(HParser *parser) { /* No-op */ }
+void h_missing_free(HParser *parser) { /* No-op */
+}
 
 HParserBackendVTable h__missing_backend_vtable = {
     .compile = h_missing_compile,

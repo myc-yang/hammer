@@ -1,35 +1,33 @@
 /* Copyright (c) 2026 Riverside Research */
-
+#if defined(RTEMS_BUILD) && defined(STATIC_BUILD)
 #include "static_alloc.h"
+
 #include "allocator.h"
-#include <stdio.h>
 
-#ifdef RTEMS_BUILD
 #include <rtems.h>
-#define SA_HALT(fmt, ...) do { printf("static_alloc: " fmt "\n", ##__VA_ARGS__); \
-                               rtems_fatal(RTEMS_FATAL_SOURCE_APPLICATION, 1); } while (0)
-#else
 #include <stdio.h>
-#include <stdlib.h>
-#define SA_HALT(fmt, ...) do { fprintf(stderr, "static_alloc: " fmt "\n", ##__VA_ARGS__); \
-                               abort(); } while (0)
-#endif
+#define SA_HALT(fmt, ...)                                                                          \
+    do {                                                                                           \
+        printf("static_alloc: " fmt "\n", ##__VA_ARGS__);                                          \
+        rtems_fatal(RTEMS_FATAL_SOURCE_APPLICATION, 1);                                            \
+    } while (0)
 
-#include <stdint.h> 
+#include <stdint.h>
 
-// Change these to be bound to what is needed for grammar. More than likely that implies increasing Parse Pool
-#define GRAMMAR_POOL_SIZE  (256u * 1024u) // 256 KB
-#define PARSE_POOL_SIZE    (256u * 1024u) // 256 KB, change to what is needed by each parse call
+// Change these to be bound to what is needed for grammar. More than likely that implies increasing
+// Parse Pool
+#define GRAMMAR_POOL_SIZE (256u * 1024u) // 256 KB
+#define PARSE_POOL_SIZE (256u * 1024u)   // 256 KB, change to what is needed by each parse call
 
 // SPARC Alignment
 #define SA_ALIGN 8u
 
 typedef struct {
-    HAllocator  base; //keep first
-    uint8_t    *buf;
-    size_t      size;
-    size_t      offset;
-    size_t      high_water;
+    HAllocator base; // keep first
+    uint8_t *buf;
+    size_t size;
+    size_t offset;
+    size_t high_water;
     const char *name;
 } StaticAllocator;
 
@@ -41,7 +39,7 @@ static StaticAllocator parse_sa;
 
 /* Public handles callers reference. Set in h_static_alloc_init. */
 HAllocator *h_grammar_allocator = NULL;
-HAllocator *h_parse_allocator   = NULL;
+HAllocator *h_parse_allocator = NULL;
 
 /* Round a size up to the next SA_ALIGN multiple. Keeps the offset aligned
  * after each alloc, so the next allocation also starts aligned. */
@@ -53,19 +51,28 @@ static inline size_t sa_round_up(size_t n) {
 
 static void *sa_alloc(HAllocator *mm, size_t size) {
     StaticAllocator *a = (StaticAllocator *)mm;
+    size_t free_space;
 
     if (size == 0)
         size = 1;
+
+    /*
+     * Do not let alignment rounding wrap a near-SIZE_MAX request to a small
+     * allocation.  The capacity check below relies on size being exact.
+     */
+    if (size > SIZE_MAX - (SA_ALIGN - 1)) {
+        SA_HALT("%s pool request too large: %lu", a->name, (unsigned long)size);
+        return NULL;
+    }
     size = sa_round_up(size);
 
-    if (a->offset + size > a->size) {
+    /* Subtraction avoids overflow in offset + size. */
+    free_space = a->offset <= a->size ? a->size - a->offset : 0;
+    if (a->offset > a->size || size > free_space) {
         // No heap to fall back to. Halt rather than corrupt
-        SA_HALT("%s pool exhausted: need %lu, %lu free (size=%lu)",
-                a->name,
-                (unsigned long)size,
-                (unsigned long)(a->size - a->offset),
-                (unsigned long)a->size);
-        return NULL; 
+        SA_HALT("%s pool exhausted: need %lu, %lu free (size=%lu)", a->name, (unsigned long)size,
+                (unsigned long)free_space, (unsigned long)a->size);
+        return NULL;
     }
 
     void *ret = a->buf + a->offset;
@@ -94,32 +101,31 @@ static void sa_free(HAllocator *mm, void *ptr) {
 // setup
 
 void h_static_alloc_init(void) {
-    grammar_sa.base.alloc   = sa_alloc;
+    grammar_sa.base.alloc = sa_alloc;
     grammar_sa.base.realloc = sa_realloc;
-    grammar_sa.base.free    = sa_free;
-    grammar_sa.buf          = grammar_buf;
-    grammar_sa.size         = GRAMMAR_POOL_SIZE;
-    grammar_sa.offset       = 0;
-    grammar_sa.high_water   = 0;
-    grammar_sa.name         = "grammar";
+    grammar_sa.base.free = sa_free;
+    grammar_sa.buf = grammar_buf;
+    grammar_sa.size = GRAMMAR_POOL_SIZE;
+    grammar_sa.offset = 0;
+    grammar_sa.high_water = 0;
+    grammar_sa.name = "grammar";
 
-    parse_sa.base.alloc     = sa_alloc;
-    parse_sa.base.realloc   = sa_realloc;
-    parse_sa.base.free      = sa_free;
-    parse_sa.buf            = parse_buf;
-    parse_sa.size           = PARSE_POOL_SIZE;
-    parse_sa.offset         = 0;
-    parse_sa.high_water     = 0;
-    parse_sa.name           = "parse";
+    parse_sa.base.alloc = sa_alloc;
+    parse_sa.base.realloc = sa_realloc;
+    parse_sa.base.free = sa_free;
+    parse_sa.buf = parse_buf;
+    parse_sa.size = PARSE_POOL_SIZE;
+    parse_sa.offset = 0;
+    parse_sa.high_water = 0;
+    parse_sa.name = "parse";
 
     h_grammar_allocator = &grammar_sa.base;
-    h_parse_allocator   = &parse_sa.base;
+    h_parse_allocator = &parse_sa.base;
 }
 
-void h_parse_pool_reset(void) {
-    parse_sa.offset = 0;
-}
+void h_parse_pool_reset(void) { parse_sa.offset = 0; }
 
-size_t h_grammar_pool_used(void)     { return grammar_sa.offset; }
-size_t h_parse_pool_used(void)       { return parse_sa.offset; }
+size_t h_grammar_pool_used(void) { return grammar_sa.offset; }
+size_t h_parse_pool_used(void) { return parse_sa.offset; }
 size_t h_parse_pool_high_water(void) { return parse_sa.high_water; }
+#endif /* defined(RTEMS_BUILD) && defined(STATIC_BUILD) */

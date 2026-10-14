@@ -230,13 +230,13 @@ HParsedToken *h_make_float(HArena *arena, float val);
 #define H_ASSERT_FLOAT(TOK) h_assert_type(TT_FLOAT, TOK)
 
 /** Assert expected type and return contained value. */
-#define H_CAST(TYP, TOK) ((TYP *)H_ASSERT(TYP, TOK)->user)
-#define H_CAST_SEQ(TOK) (H_ASSERT_SEQ(TOK)->seq)
-#define H_CAST_BYTES(TOK) (H_ASSERT_BYTES(TOK)->bytes)
-#define H_CAST_SINT(TOK) (H_ASSERT_SINT(TOK)->sint)
-#define H_CAST_UINT(TOK) (H_ASSERT_UINT(TOK)->uint)
-#define H_CAST_DOUBLE(TOK) (H_ASSERT_DOUBLE(TOK)->dbl)
-#define H_CAST_FLOAT(TOK) (H_ASSERT_FLOAT(TOK)->flt)
+#define H_CAST(TYP, TOK) ((TYP *)H_ASSERT(TYP, TOK)->token_data.user)
+#define H_CAST_SEQ(TOK) (H_ASSERT_SEQ(TOK)->token_data.seq)
+#define H_CAST_BYTES(TOK) (H_ASSERT_BYTES(TOK)->token_data.bytes)
+#define H_CAST_SINT(TOK) (H_ASSERT_SINT(TOK)->token_data.sint)
+#define H_CAST_UINT(TOK) (H_ASSERT_UINT(TOK)->token_data.uint)
+#define H_CAST_DOUBLE(TOK) (H_ASSERT_DOUBLE(TOK)->token_data.dbl)
+#define H_CAST_FLOAT(TOK) (H_ASSERT_FLOAT(TOK)->token_data.flt)
 
 /** Sequence access... */
 
@@ -276,15 +276,52 @@ HParsedToken *h_seq_index_vpath(const HParsedToken *p, size_t i, va_list va);
 /** Lower-level helper for h_seq_index. */
 HParsedToken *h_carray_index(const HCountedArray *a, size_t i); /**< XXX -> internal */
 
+/** Common Bit flag checking combinators **/
+/**
+ * @brief parse that parses a single bit and fails if it is 0
+ *
+ * @return Result token type: TT_UINT
+ * @note Only works on Packrat backend
+ */
+#define H_BIT1() h_int_range(h_bits(1, false), 1, 1)
+/**
+ * @brief parse that parses a single bit and fails if it is 1
+ *
+ * @return Result token type: TT_UINT
+ * @note Only works on Packrat backend
+ */
+#define H_BIT0() h_int_range(h_bits(1, false), 0, 0)
+
 /** Sequence modification... */
 
-/** Add elements to a sequence. */
-void h_seq_snoc(HParsedToken *xs, const HParsedToken *x);    /**< append one */
-void h_seq_append(HParsedToken *xs, const HParsedToken *ys); /**< append many */
+/**
+ * @brief Add one element to a sequence
+ * @param xs A TT_SEQUENCE of tokens
+ * @param x A single token to be added
+ */
+void h_seq_snoc(HParsedToken *xs, const HParsedToken *x);
+/**
+ * @brief Add many elements to a sequence
+ * @param xs A TT_SEQUENCE of tokens
+ * @param ys A TT_SEQUENCE of tokens to be added
+ */
+void h_seq_append(HParsedToken *xs, const HParsedToken *ys);
 
-/** XXX TODO: Remove elements from a sequence. */
+/**
+ * @brief Remove n elemenets from a sequence
+ * @param xs A TT_SEQUENCE of tokens
+ * @param n Number of elements to remove.
+ * @note if n is larger than the sequence it will remove all elements without error
+ */
+void h_seq_remove(HParsedToken *xs, size_t n);
 
-/** Flatten nested sequences into one. */
+/**
+ * @brief Flatten nested sequences into one.
+ * @param arena An HArena
+ * @param p A Token
+ * @return Always returns a sequence, never NULL
+ * @note If input element is not a sequence, returns it as a singleton sequence.
+ */
 const HParsedToken *h_seq_flatten(HArena *arena, const HParsedToken *p);
 
 #endif

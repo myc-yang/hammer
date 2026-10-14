@@ -7,6 +7,119 @@
 #include <glib.h>
 #include <string.h>
 
+typedef struct {
+    HAllocator allocator;
+    void *fail_realloc_ptr;
+    void *failed_realloc_ptr;
+    bool fail_next_realloc;
+} CFStackOOMAllocator;
+
+static void *cfstack_oom_alloc(HAllocator *mm__, size_t size) {
+    (void)mm__;
+    return system_allocator.alloc(&system_allocator, size);
+}
+
+static void *cfstack_oom_realloc(HAllocator *mm__, void *ptr, size_t size) {
+    CFStackOOMAllocator *state = (CFStackOOMAllocator *)mm__;
+    if (state->fail_next_realloc || ptr == state->fail_realloc_ptr) {
+        state->fail_next_realloc = false;
+        state->failed_realloc_ptr = ptr;
+        return NULL;
+    }
+    return system_allocator.realloc(&system_allocator, ptr, size);
+}
+
+static void cfstack_oom_free(HAllocator *mm__, void *ptr) {
+    (void)mm__;
+    system_allocator.free(&system_allocator, ptr);
+}
+
+static CFStackOOMAllocator cfstack_oom_allocator(void) {
+    CFStackOOMAllocator state = {
+        .allocator = {cfstack_oom_alloc, cfstack_oom_realloc, cfstack_oom_free, NULL, NULL},
+        .fail_realloc_ptr = NULL,
+        .failed_realloc_ptr = NULL,
+        .fail_next_realloc = false,
+    };
+    return state;
+}
+
+#ifndef RTEMS_BUILD
+static void test_cfstack_begin_seq_realloc_failure(void) {
+    if (g_test_subprocess()) {
+        CFStackOOMAllocator state = cfstack_oom_allocator();
+        HAllocator *mm__ = &state.allocator;
+        HCFStack *stack = h_cfstack_new(mm__);
+
+        h_cfstack_begin_choice(mm__, stack);
+        HCFChoice *choice = stack->stack[0];
+        HCFSequence **old_seq = choice->data.seq;
+        state.fail_realloc_ptr = old_seq;
+
+        h_cfstack_begin_seq(mm__, stack);
+
+        /*
+         * Reached only if h_cfstack_begin_seq() unexpectedly returns after
+         * the failed realloc. Restore the original allocation before forcing
+         * failure so this regression path remains sanitizer-clean.
+         */
+        if (!choice->data.seq)
+            choice->data.seq = old_seq;
+        mm__->free(mm__, choice->data.seq);
+        mm__->free(mm__, choice);
+        h_cfstack_free(mm__, stack);
+        g_error("h_cfstack_begin_seq returned after realloc failure");
+    }
+
+    g_test_trap_subprocess(NULL, 0, (GTestSubprocessFlags)0);
+    g_test_trap_assert_failed();
+    g_test_trap_assert_stderr("*memory reallocation failed*");
+}
+
+static void test_cfstack_begin_choice_realloc_failure(void) {
+    if (g_test_subprocess()) {
+        CFStackOOMAllocator state = cfstack_oom_allocator();
+        HAllocator *mm__ = &state.allocator;
+        HCFStack *stack = h_cfstack_new(mm__);
+
+        /* Fill the four-entry stack with valid nested choices. */
+        for (size_t i = 0; i < 4; i++) {
+            h_cfstack_begin_choice(mm__, stack);
+            h_cfstack_begin_seq(mm__, stack);
+        }
+        assert(stack->count == stack->cap);
+        state.fail_realloc_ptr = stack->stack;
+
+        h_cfstack_begin_choice(mm__, stack);
+        g_error("h_cfstack_begin_choice returned after realloc failure");
+    }
+
+    g_test_trap_subprocess(NULL, 0, (GTestSubprocessFlags)0);
+    g_test_trap_assert_failed();
+    g_test_trap_assert_stderr("*memory reallocation failed*");
+}
+#endif
+
+static void test_desugar_uses_context_arena_for_cf_storage(void) {
+    CFStackOOMAllocator state = cfstack_oom_allocator();
+    HAllocator *mm__ = &state.allocator;
+    HParser *parser = h_epsilon_p__m(mm__);
+
+    /*
+     * Desugared CFG storage is arena-owned by the parser's desugar context.
+     * A pending realloc failure on the parser owner allocator must not be
+     * consumed by the internal CF stack growth path.
+     */
+    state.fail_next_realloc = true;
+    HCFChoice *choice = h_desugar(mm__, NULL, parser);
+
+    g_check_cmp_ptr(choice, !=, NULL);
+    g_check_cmp_ptr(state.failed_realloc_ptr, ==, NULL);
+    g_check_cmp_int(state.fail_next_realloc, ==, true);
+
+    h_parser_free__m(mm__, parser);
+}
+
 // Helper continuation functions for testing bind parser
 static HParser *bind_cont(HAllocator *mm__, const HParsedToken *x, void *user_data) {
     (void)mm__;
@@ -51,7 +164,7 @@ __attribute__((unused)) static void test_unimplemented_parser(void) {
 
 // Test reshape_bits function
 // reshape_bits is called when desugaring bits parsers and converting CFG parse results
-// Note: reshape_bits has a bug where ret->uint is not initialized before the loop
+// Note: reshape_bits has a bug where ret->token_data.uint is not initialized before the loop
 // This test verifies that the function is called (for coverage) but may reveal the bug
 static void test_reshape_bits_unsigned(void) {
     // Create a bits parser and desugar it to get the reshape function
@@ -70,7 +183,7 @@ static void test_reshape_bits_unsigned(void) {
     g_check_cmp_ptr(res, !=, NULL);
     g_check_cmp_ptr(res->ast, !=, NULL);
     g_check_cmp_int(res->ast->token_type, ==, TT_UINT);
-    g_check_cmp_int(res->ast->uint, ==, 0x1234);
+    g_check_cmp_int(res->ast->token_data.uint, ==, 0x1234);
     h_parse_result_free(res);
 }
 
@@ -87,7 +200,7 @@ static void test_reshape_bits_signed(void) {
     g_check_cmp_ptr(res, !=, NULL);
     g_check_cmp_ptr(res->ast, !=, NULL);
     g_check_cmp_int(res->ast->token_type, ==, TT_SINT);
-    g_check_cmp_int(res->ast->sint, ==, -2);
+    g_check_cmp_int(res->ast->token_data.sint, ==, -2);
     h_parse_result_free(res);
 }
 
@@ -103,7 +216,7 @@ static void test_reshape_bits_signed_positive(void) {
     g_check_cmp_ptr(res, !=, NULL);
     g_check_cmp_ptr(res->ast, !=, NULL);
     g_check_cmp_int(res->ast->token_type, ==, TT_SINT);
-    g_check_cmp_int(res->ast->sint, ==, 0x1234);
+    g_check_cmp_int(res->ast->token_data.sint, ==, 0x1234);
     h_parse_result_free(res);
 }
 
@@ -181,6 +294,36 @@ static void test_indirect_isValidCF(void) {
     // but doesn't protect against NULL dereference.
 }
 
+static void test_desugar_context_lifetime(void) {
+    HParser *p1 = h_ch('a');
+    HParser *p2 = h_ch('b');
+    HParser *sequence = h_sequence(p1, p2, NULL);
+
+    g_check_cmp_ptr(h_desugar(&system_allocator, NULL, sequence), !=, NULL);
+    // g_check_cmp_ptr(sequence->desugar_ctx, !=, NULL);
+    // g_check_cmp_ptr(p1->desugar_ctx, ==, sequence->desugar_ctx);
+    // g_check_cmp_ptr(p2->desugar_ctx, ==, sequence->desugar_ctx);
+
+    h_parser_free(sequence);
+    g_check_cmp_ptr(p1->desugared, !=, NULL);
+    g_check_cmp_ptr(p2->desugared, !=, NULL);
+
+    h_parser_free(p1);
+    h_parser_free(p2);
+}
+
+static void test_indirect_desugar_has_own_cfg(void) {
+    HParser *inner = h_ch('a');
+    HParser *indirect = h_indirect();
+    h_bind_indirect(indirect, inner);
+
+    g_check_cmp_ptr(h_desugar(&system_allocator, NULL, indirect), !=, NULL);
+    g_check_cmp_ptr(indirect->desugared, !=, inner->desugared);
+
+    h_parser_free(indirect);
+    h_parser_free(inner);
+}
+
 static void test_reshape_bits_direct(void) {
     HArena *arena = h_new_arena(&system_allocator, 0);
 
@@ -197,15 +340,15 @@ static void test_reshape_bits_direct(void) {
     // Create two UINT tokens representing bytes 0x12 and 0x34
     HParsedToken *byte1 = h_arena_malloc(arena, sizeof(HParsedToken));
     byte1->token_type = TT_UINT;
-    byte1->uint = 0x12;
+    byte1->token_data.uint = 0x12;
     h_carray_append(seq, byte1);
 
     HParsedToken *byte2 = h_arena_malloc(arena, sizeof(HParsedToken));
     byte2->token_type = TT_UINT;
-    byte2->uint = 0x34;
+    byte2->token_data.uint = 0x34;
     h_carray_append(seq, byte2);
 
-    seq_token->seq = seq;
+    seq_token->token_data.seq = seq;
     mock_res->ast = seq_token;
 
     // Get the reshape function from desugared bits parser
@@ -220,7 +363,7 @@ static void test_reshape_bits_direct(void) {
         desugared_unsigned->reshape(mock_res, desugared_unsigned->user_data);
     g_check_cmp_ptr(reshaped_unsigned, !=, NULL);
     g_check_cmp_int(reshaped_unsigned->token_type, ==, TT_UINT);
-    g_check_cmp_int(reshaped_unsigned->uint, ==, 0x1234);
+    g_check_cmp_int(reshaped_unsigned->token_data.uint, ==, 0x1234);
 
     // Test signed bits - reshape_bits with signedp_p != NULL
     const HParser *p_signed = h_bits(16, true); // 2 bytes, signed
@@ -234,9 +377,9 @@ static void test_reshape_bits_direct(void) {
         desugared_signed->reshape(mock_res, desugared_signed->user_data);
     g_check_cmp_ptr(reshaped_signed_pos, !=, NULL);
     g_check_cmp_int(reshaped_signed_pos->token_type, ==, TT_SINT);
-    g_check_cmp_int(reshaped_signed_pos->sint, ==, 0x1234);
+    g_check_cmp_int(reshaped_signed_pos->token_data.sint, ==, 0x1234);
 
-    // Test signed negative (MSB set) - covers line 36-37: ret->uint = -1
+    // Test signed negative (MSB set) - covers line 36-37: ret->token_data.uint = -1
     // Create a sequence with MSB set (0x80)
     HParseResult *mock_res_neg = h_arena_malloc(arena, sizeof(HParseResult));
     mock_res_neg->arena = arena;
@@ -248,15 +391,15 @@ static void test_reshape_bits_direct(void) {
 
     HParsedToken *byte1_neg = h_arena_malloc(arena, sizeof(HParsedToken));
     byte1_neg->token_type = TT_UINT;
-    byte1_neg->uint = 0x80; // MSB set
+    byte1_neg->token_data.uint = 0x80; // MSB set
     h_carray_append(seq_neg, byte1_neg);
 
     HParsedToken *byte2_neg = h_arena_malloc(arena, sizeof(HParsedToken));
     byte2_neg->token_type = TT_UINT;
-    byte2_neg->uint = 0x00;
+    byte2_neg->token_data.uint = 0x00;
     h_carray_append(seq_neg, byte2_neg);
 
-    seq_token_neg->seq = seq_neg;
+    seq_token_neg->token_data.seq = seq_neg;
     mock_res_neg->ast = seq_token_neg;
 
     // Call reshape_bits directly (signed negative case - MSB set)
@@ -264,9 +407,9 @@ static void test_reshape_bits_direct(void) {
         desugared_signed->reshape(mock_res_neg, desugared_signed->user_data);
     g_check_cmp_ptr(reshaped_signed_neg, !=, NULL);
     g_check_cmp_int(reshaped_signed_neg->token_type, ==, TT_SINT);
-    // reshape_bits sets ret->uint = -1 when MSB is set, then processes bytes
+    // reshape_bits sets ret->token_data.uint = -1 when MSB is set, then processes bytes
     // So 0x8000 should become a signed value
-    g_check_cmp_int(reshaped_signed_neg->sint, ==, (int16_t)0x8000);
+    g_check_cmp_int(reshaped_signed_neg->token_data.sint, ==, (int16_t)0x8000);
 
     // Test with 0xFF (all ones MSB) - covers line 36-37
     HParseResult *mock_res_ff = h_arena_malloc(arena, sizeof(HParseResult));
@@ -279,22 +422,22 @@ static void test_reshape_bits_direct(void) {
 
     HParsedToken *byte1_ff = h_arena_malloc(arena, sizeof(HParsedToken));
     byte1_ff->token_type = TT_UINT;
-    byte1_ff->uint = 0xFF; // All ones MSB
+    byte1_ff->token_data.uint = 0xFF; // All ones MSB
     h_carray_append(seq_ff, byte1_ff);
 
     HParsedToken *byte2_ff = h_arena_malloc(arena, sizeof(HParsedToken));
     byte2_ff->token_type = TT_UINT;
-    byte2_ff->uint = 0x00;
+    byte2_ff->token_data.uint = 0x00;
     h_carray_append(seq_ff, byte2_ff);
 
-    seq_token_ff->seq = seq_ff;
+    seq_token_ff->token_data.seq = seq_ff;
     mock_res_ff->ast = seq_token_ff;
 
     HParsedToken *reshaped_signed_ff =
         desugared_signed->reshape(mock_res_ff, desugared_signed->user_data);
     g_check_cmp_ptr(reshaped_signed_ff, !=, NULL);
     g_check_cmp_int(reshaped_signed_ff->token_type, ==, TT_SINT);
-    g_check_cmp_int(reshaped_signed_ff->sint, ==, (int16_t)0xFF00);
+    g_check_cmp_int(reshaped_signed_ff->token_data.sint, ==, (int16_t)0xFF00);
 
     // Test with 32-bit (4 bytes) to ensure loop works for more bytes
     HParseResult *mock_res_32 = h_arena_malloc(arena, sizeof(HParseResult));
@@ -307,25 +450,25 @@ static void test_reshape_bits_direct(void) {
 
     HParsedToken *b1 = h_arena_malloc(arena, sizeof(HParsedToken));
     b1->token_type = TT_UINT;
-    b1->uint = 0x12;
+    b1->token_data.uint = 0x12;
     h_carray_append(seq_32, b1);
 
     HParsedToken *b2 = h_arena_malloc(arena, sizeof(HParsedToken));
     b2->token_type = TT_UINT;
-    b2->uint = 0x34;
+    b2->token_data.uint = 0x34;
     h_carray_append(seq_32, b2);
 
     HParsedToken *b3 = h_arena_malloc(arena, sizeof(HParsedToken));
     b3->token_type = TT_UINT;
-    b3->uint = 0x56;
+    b3->token_data.uint = 0x56;
     h_carray_append(seq_32, b3);
 
     HParsedToken *b4 = h_arena_malloc(arena, sizeof(HParsedToken));
     b4->token_type = TT_UINT;
-    b4->uint = 0x78;
+    b4->token_data.uint = 0x78;
     h_carray_append(seq_32, b4);
 
-    seq_token_32->seq = seq_32;
+    seq_token_32->token_data.seq = seq_32;
     mock_res_32->ast = seq_token_32;
 
     const HParser *p_uint32 = h_bits(32, false);
@@ -334,7 +477,7 @@ static void test_reshape_bits_direct(void) {
         desugared_uint32->reshape(mock_res_32, desugared_uint32->user_data);
     g_check_cmp_ptr(reshaped_uint32, !=, NULL);
     g_check_cmp_int(reshaped_uint32->token_type, ==, TT_UINT);
-    g_check_cmp_int(reshaped_uint32->uint, ==, 0x12345678);
+    g_check_cmp_int(reshaped_uint32->token_data.uint, ==, 0x12345678);
 
     // Test 32-bit signed negative (MSB set)
     // Create a new sequence with MSB set in first byte
@@ -348,25 +491,25 @@ static void test_reshape_bits_direct(void) {
 
     HParsedToken *b1_neg32 = h_arena_malloc(arena, sizeof(HParsedToken));
     b1_neg32->token_type = TT_UINT;
-    b1_neg32->uint = 0x80; // MSB set
+    b1_neg32->token_data.uint = 0x80; // MSB set
     h_carray_append(seq_32_neg, b1_neg32);
 
     HParsedToken *b2_neg32 = h_arena_malloc(arena, sizeof(HParsedToken));
     b2_neg32->token_type = TT_UINT;
-    b2_neg32->uint = 0x00;
+    b2_neg32->token_data.uint = 0x00;
     h_carray_append(seq_32_neg, b2_neg32);
 
     HParsedToken *b3_neg32 = h_arena_malloc(arena, sizeof(HParsedToken));
     b3_neg32->token_type = TT_UINT;
-    b3_neg32->uint = 0x00;
+    b3_neg32->token_data.uint = 0x00;
     h_carray_append(seq_32_neg, b3_neg32);
 
     HParsedToken *b4_neg32 = h_arena_malloc(arena, sizeof(HParsedToken));
     b4_neg32->token_type = TT_UINT;
-    b4_neg32->uint = 0x00;
+    b4_neg32->token_data.uint = 0x00;
     h_carray_append(seq_32_neg, b4_neg32);
 
-    seq_token_32_neg->seq = seq_32_neg;
+    seq_token_32_neg->token_data.seq = seq_32_neg;
     mock_res_32_neg->ast = seq_token_32_neg;
 
     const HParser *p_int32 = h_bits(32, true);
@@ -375,7 +518,7 @@ static void test_reshape_bits_direct(void) {
         desugared_int32->reshape(mock_res_32_neg, desugared_int32->user_data);
     g_check_cmp_ptr(reshaped_int32_neg, !=, NULL);
     g_check_cmp_int(reshaped_int32_neg->token_type, ==, TT_SINT);
-    g_check_cmp_int(reshaped_int32_neg->sint, ==, (int32_t)0x80000000);
+    g_check_cmp_int(reshaped_int32_neg->token_data.sint, ==, (int32_t)0x80000000);
 
     // Test edge case: empty sequence (seq->used == 0) - covers line 36 condition
     HParseResult *mock_res_empty = h_arena_malloc(arena, sizeof(HParseResult));
@@ -385,7 +528,7 @@ static void test_reshape_bits_direct(void) {
     HParsedToken *seq_token_empty = h_arena_malloc(arena, sizeof(HParsedToken));
     seq_token_empty->token_type = TT_SEQUENCE;
     HCountedArray *seq_empty = h_carray_new_sized(arena, 0);
-    seq_token_empty->seq = seq_empty;
+    seq_token_empty->token_data.seq = seq_empty;
     mock_res_empty->ast = seq_token_empty;
 
     // Test unsigned with empty sequence
@@ -393,7 +536,7 @@ static void test_reshape_bits_direct(void) {
         desugared_unsigned->reshape(mock_res_empty, desugared_unsigned->user_data);
     g_check_cmp_ptr(reshaped_empty_unsigned, !=, NULL);
     g_check_cmp_int(reshaped_empty_unsigned->token_type, ==, TT_UINT);
-    // When seq->used == 0, the loop doesn't execute, so ret->uint remains uninitialized
+    // When seq->used == 0, the loop doesn't execute, so ret->token_data.uint remains uninitialized
     // but the function should still return a valid token
 
     // Test signed with empty sequence (condition on line 36 is false because seq->used == 0)
@@ -409,6 +552,14 @@ static void test_reshape_bits_direct(void) {
 void register_internal_tests(void) {
     // Skip unimplemented test due to crash - it's already tested in test_unimplemented.c
     // g_test_add_func("/core/internal/unimplemented", test_unimplemented_parser);
+#ifndef RTEMS_BUILD
+    g_test_add_func("/core/internal/cfstack_begin_seq_realloc_failure",
+                    test_cfstack_begin_seq_realloc_failure);
+    g_test_add_func("/core/internal/cfstack_begin_choice_realloc_failure",
+                    test_cfstack_begin_choice_realloc_failure);
+#endif
+    g_test_add_func("/core/internal/desugar_uses_context_arena_for_cf_storage",
+                    test_desugar_uses_context_arena_for_cf_storage);
     g_test_add_func("/core/internal/reshape_bits_unsigned", test_reshape_bits_unsigned);
     g_test_add_func("/core/internal/reshape_bits_signed", test_reshape_bits_signed);
     g_test_add_func("/core/internal/reshape_bits_signed_positive",
@@ -417,4 +568,6 @@ void register_internal_tests(void) {
     g_test_add_func("/core/internal/ignoreseq_isValidRegular", test_ignoreseq_isValidRegular);
     g_test_add_func("/core/internal/ignoreseq_isValidCF", test_ignoreseq_isValidCF);
     g_test_add_func("/core/internal/indirect_isValidCF", test_indirect_isValidCF);
+    g_test_add_func("/core/internal/desugar_context_lifetime", test_desugar_context_lifetime);
+    g_test_add_func("/core/internal/indirect_desugar_own_cfg", test_indirect_desugar_has_own_cfg);
 }

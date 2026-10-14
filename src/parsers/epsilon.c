@@ -10,21 +10,19 @@ static HParseResult *parse_epsilon(void *env, HParseState *state) {
     return res;
 }
 
+static bool epsilon_ctrvm(HRVMProg *prog, void *env) { return true; }
+
 static const HParserVtable epsilon_vt = {
+    .name = "h_epsilon",
     .parse = parse_epsilon,
     .isValidRegular = h_true,
     .isValidCF = h_true,
+    .compile_to_rvm = epsilon_ctrvm,
     .desugar = desugar_epsilon,
     .higher = false,
 };
 
 HParser *h_epsilon_p() { return h_epsilon_p__m(h_default_allocator); }
 HParser *h_epsilon_p__m(HAllocator *mm__) {
-    HParser *epsilon_p = h_new(HParser, 1);
-    epsilon_p->desugared = NULL;
-    epsilon_p->backend_data = NULL;
-    epsilon_p->backend = h_get_default_backend();
-    epsilon_p->backend_vtable = h_get_default_backend_vtable();
-    epsilon_p->vtable = &epsilon_vt;
-    return epsilon_p;
+    return h_new_parser_with_free(mm__, &epsilon_vt, NULL, h_no_free_env);
 }
